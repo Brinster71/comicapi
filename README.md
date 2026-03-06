@@ -49,10 +49,10 @@ Start the server first, then run:
 
 ```bash
 curl -sS http://127.0.0.1:8080/
-curl -sS "http://127.0.0.1:8080/api/comicvine/search?query=Batman"
+curl -sS "http://127.0.0.1:8080/api/comicvine/search?query=Batman&api_key=YOUR_KEY"
 ```
 
-Without a ComicVine key, the second endpoint should return a 400 error message telling you to set `COMICVINE_API_KEY`.
+Without a ComicVine key, the endpoint returns a 400 error. You can either set `COMICVINE_API_KEY` or pass `api_key` directly in the query string.
 
 ## ComicVine setup
 
@@ -63,7 +63,7 @@ export COMICVINE_API_KEY=your_key_here
 Then restart the server and call:
 
 ```bash
-curl -sS "http://127.0.0.1:8080/api/comicvine/search?query=Batman"
+curl -sS "http://127.0.0.1:8080/api/comicvine/search?query=Batman&api_key=YOUR_KEY"
 ```
 
 ## Metadata API examples

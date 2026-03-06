@@ -23,6 +23,11 @@ export COMICVINE_API_KEY=your_key_here
 
 The endpoint `GET /api/comicvine/search?query=...` will return series + issue candidate results.
 
+The ComicVine key can be provided either:
+
+- via environment variable (`COMICVINE_API_KEY`), or
+- directly from the web UI input (sent as `api_key` query param).
+
 ## API quickstart
 
 - `GET /api/scan?root=/path/to/library`

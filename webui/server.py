@@ -3,7 +3,7 @@ import os
 from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from .comicvine import ComicVineClient
 from ..comicarchive import ComicArchive, MetaDataStyle
@@ -11,16 +11,125 @@ from ..comicarchive import ComicArchive, MetaDataStyle
 
 INDEX_HTML = """<!doctype html>
 <html>
-<head><meta charset='utf-8'><title>Comic Metadata UI</title></head>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>Comic Metadata UI</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1rem; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: .5rem; }
+    input, select, button, textarea { padding: .4rem; }
+    input[type=text] { min-width: 20rem; }
+    textarea { width: 100%; min-height: 14rem; font-family: ui-monospace, monospace; }
+    table { border-collapse: collapse; width: 100%; margin-top: .5rem; }
+    th, td { border: 1px solid #ddd; padding: .35rem; text-align: left; }
+    tr:hover { background: #f6f6f6; cursor: pointer; }
+    .muted { color: #666; font-size: .9rem; }
+  </style>
+</head>
 <body>
-<h2>Comic Metadata UI (MVP)</h2>
-<p>Use the API endpoints below. This page is intentionally minimal for now.</p>
-<ul>
-  <li>GET /api/scan?root=/path/to/library</li>
-  <li>GET /api/read?path=/path/to/file.cbz&style=CIX</li>
-  <li>POST /api/write {"path":"...","style":"CIX","metadata":{"series":"...","issue":"1"}}</li>
-  <li>GET /api/comicvine/search?query=Batman</li>
-</ul>
+  <h2>Comic Metadata UI</h2>
+  <p class='muted'>Scan comics, read/edit metadata, and query ComicVine (API key can be entered below).</p>
+
+  <div class='row'>
+    <label>Library path:</label>
+    <input id='rootPath' type='text' placeholder='/path/to/comics'>
+    <button onclick='scanLibrary()'>Scan</button>
+  </div>
+
+  <div class='row'>
+    <label>Selected file:</label>
+    <input id='comicPath' type='text' placeholder='/path/to/file.cbz'>
+    <label>Style:</label>
+    <select id='style'>
+      <option value='CIX'>CIX</option>
+      <option value='CBI'>CBI</option>
+      <option value='COMET'>COMET</option>
+    </select>
+    <button onclick='readMetadata()'>Read metadata</button>
+  </div>
+
+  <div class='row'>
+    <label>ComicVine API key:</label>
+    <input id='apiKey' type='text' placeholder='paste API key here (or use COMICVINE_API_KEY env var)'>
+    <label>Search:</label>
+    <input id='cvQuery' type='text' placeholder='Batman 2011 1'>
+    <button onclick='searchComicVine()'>Search ComicVine</button>
+  </div>
+
+  <div class='row'>
+    <button onclick='writeMetadata()'>Write metadata patch to selected file</button>
+  </div>
+
+  <h3>Scan results</h3>
+  <div class='muted'>Click a row to select a comic file.</div>
+  <table id='scanTable'>
+    <thead><tr><th>Path</th><th>Pages</th><th>CIX</th><th>CBI</th><th>COMET</th><th>Error</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <h3>Metadata (JSON)</h3>
+  <textarea id='metadataJson' placeholder='Read metadata first, then edit JSON fields...'></textarea>
+
+  <h3>ComicVine results</h3>
+  <textarea id='comicvineJson' placeholder='ComicVine search results appear here...'></textarea>
+
+  <script>
+    function showJson(id, obj) {
+      document.getElementById(id).value = JSON.stringify(obj, null, 2);
+    }
+
+    async function scanLibrary() {
+      const root = document.getElementById('rootPath').value.trim();
+      if (!root) return alert('Enter a library path first.');
+      const res = await fetch('/api/scan?root=' + encodeURIComponent(root));
+      const data = await res.json();
+      const tbody = document.querySelector('#scanTable tbody');
+      tbody.innerHTML = '';
+      (data.results || []).forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${r.path || ''}</td><td>${r.pages ?? ''}</td><td>${r.has_cix ?? ''}</td><td>${r.has_cbi ?? ''}</td><td>${r.has_comet ?? ''}</td><td>${r.error || ''}</td>`;
+        tr.onclick = () => { if (r.path) document.getElementById('comicPath').value = r.path; };
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function readMetadata() {
+      const path = document.getElementById('comicPath').value.trim();
+      const style = document.getElementById('style').value;
+      if (!path) return alert('Select or enter a comic file path first.');
+      const res = await fetch('/api/read?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style));
+      showJson('metadataJson', await res.json());
+    }
+
+    async function writeMetadata() {
+      const path = document.getElementById('comicPath').value.trim();
+      const style = document.getElementById('style').value;
+      if (!path) return alert('Select or enter a comic file path first.');
+      let obj;
+      try { obj = JSON.parse(document.getElementById('metadataJson').value || '{}'); }
+      catch (e) { return alert('Metadata JSON is invalid: ' + e); }
+
+      // Accept either {metadata:{...}} or a plain metadata object
+      const patch = obj.metadata && typeof obj.metadata === 'object' ? obj.metadata : obj;
+      const res = await fetch('/api/write', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ path, style, metadata: patch })
+      });
+      showJson('metadataJson', await res.json());
+    }
+
+    async function searchComicVine() {
+      const query = document.getElementById('cvQuery').value.trim();
+      const apiKey = document.getElementById('apiKey').value.trim();
+      if (!query) return alert('Enter a ComicVine search query first.');
+      const qp = '/api/comicvine/search?query=' + encodeURIComponent(query)
+        + (apiKey ? '&api_key=' + encodeURIComponent(apiKey) : '');
+      const res = await fetch(qp);
+      showJson('comicvineJson', await res.json());
+    }
+  </script>
 </body>
 </html>"""
 
@@ -60,12 +169,13 @@ def apply_metadata(md, patch):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ComicWebUI/0.1"
+    server_version = "ComicWebUI/0.2"
 
-    @property
-    def cv_client(self):
-        api_key = os.environ.get("COMICVINE_API_KEY", "").strip()
-        return ComicVineClient(api_key) if api_key else None
+    def _comicvine_client(self, qs):
+        user_key = qs.get("api_key", [""])[0].strip()
+        env_key = os.environ.get("COMICVINE_API_KEY", "").strip()
+        key = user_key or env_key
+        return ComicVineClient(key) if key else None
 
     def _json(self, status, payload):
         body = json.dumps(payload, indent=2).encode("utf-8")
@@ -130,10 +240,11 @@ class Handler(BaseHTTPRequestHandler):
             query = qs.get("query", [""])[0]
             if not query:
                 return self._json(400, {"error": "query required"})
-            if self.cv_client is None:
-                return self._json(400, {"error": "Set COMICVINE_API_KEY environment variable"})
-            series = self.cv_client.search_series(query)
-            issues = self.cv_client.search_issue(query)
+            client = self._comicvine_client(qs)
+            if client is None:
+                return self._json(400, {"error": "Provide api_key query param or set COMICVINE_API_KEY environment variable"})
+            series = client.search_series(query)
+            issues = client.search_issue(query)
             return self._json(200, {"query": query, "series": series, "issues": issues})
 
         return self._json(404, {"error": "not found"})
