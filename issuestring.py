@@ -29,7 +29,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import utils
+from . import utils
 import math
 import re
 
@@ -51,7 +51,7 @@ class IssueString:
 		if len(text) == 0:
 			return	
 		
-		text = unicode(text)
+		text = str(text)
 		
 		#skip the minus sign if it's first
 		if text[0] == '-':
