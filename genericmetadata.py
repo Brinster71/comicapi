@@ -23,7 +23,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import utils
+from . import utils
 
 # These page info classes are exactly the same as the CIX scheme, since it's unique
 class PageType:
