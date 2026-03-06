@@ -31,12 +31,12 @@ The ComicVine key can be provided either:
 ## API quickstart
 
 - `GET /api/scan?root=/path/to/library`
-- `GET /api/read?path=/path/to/file.cbz&style=CIX`
+- `GET /api/read?path=/path/to/file.cbz&style=AUTO`
 - `POST /api/write`
   ```json
   {
     "path": "/path/to/file.cbz",
-    "style": "CIX",
+    "style": "AUTO",
     "metadata": {
       "series": "Batman",
       "issue": "1",
@@ -49,3 +49,7 @@ The ComicVine key can be provided either:
 
 - This is an MVP foundation. The next step is to add a richer UI (search result selection, preview diff, batch actions).
 - Bringing in your full ComicTagger fork is strongly recommended for production-grade ComicVine mapping behavior and parity with desktop workflows.
+
+
+- `AUTO` detects the existing metadata format (CIX/CBI/CoMet) and uses that style for read/write operations.
+- ComicVine results are shown as readable tables with match hints (issue/series/year alignment) in the UI.

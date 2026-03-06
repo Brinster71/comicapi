@@ -68,10 +68,10 @@ curl -sS "http://127.0.0.1:8080/api/comicvine/search?query=Batman&api_key=YOUR_K
 
 ## Metadata API examples
 
-Read metadata:
+Read metadata (AUTO detects existing tag style):
 
 ```bash
-curl -sS "http://127.0.0.1:8080/api/read?path=/path/to/file.cbz&style=CIX"
+curl -sS "http://127.0.0.1:8080/api/read?path=/path/to/file.cbz&style=AUTO"
 ```
 
 Write metadata:
@@ -81,7 +81,7 @@ curl -sS -X POST http://127.0.0.1:8080/api/write \
   -H "Content-Type: application/json" \
   -d '{
     "path": "/path/to/file.cbz",
-    "style": "CIX",
+    "style": "AUTO",
     "metadata": {
       "series": "Batman",
       "issue": "1",
@@ -100,3 +100,6 @@ curl -sS "http://127.0.0.1:8080/api/scan?root=/path/to/comics"
 
 - The web UI is intentionally minimal (MVP) and focused on API-first workflows.
 - For richer ComicVine mapping and production behavior, integrating your full ComicTagger fork is recommended.
+
+
+- The UI defaults to **AUTO** style detection and will read/write using detected existing metadata style when possible.

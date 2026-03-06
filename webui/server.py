@@ -3,7 +3,7 @@ import os
 from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .comicvine import ComicVineClient
 from ..comicarchive import ComicArchive, MetaDataStyle
@@ -20,11 +20,14 @@ INDEX_HTML = """<!doctype html>
     .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: .5rem; }
     input, select, button, textarea { padding: .4rem; }
     input[type=text] { min-width: 20rem; }
-    textarea { width: 100%; min-height: 14rem; font-family: ui-monospace, monospace; }
+    textarea { width: 100%; min-height: 12rem; font-family: ui-monospace, monospace; }
     table { border-collapse: collapse; width: 100%; margin-top: .5rem; }
     th, td { border: 1px solid #ddd; padding: .35rem; text-align: left; }
-    tr:hover { background: #f6f6f6; cursor: pointer; }
+    tr:hover { background: #f6f6f6; }
     .muted { color: #666; font-size: .9rem; }
+    .pill { border-radius: 999px; padding: .1rem .5rem; font-size: .8rem; }
+    .good { background: #d7f6dd; color: #145a2a; }
+    .warn { background: #fff3cd; color: #7a5b00; }
   </style>
 </head>
 <body>
@@ -42,11 +45,13 @@ INDEX_HTML = """<!doctype html>
     <input id='comicPath' type='text' placeholder='/path/to/file.cbz'>
     <label>Style:</label>
     <select id='style'>
+      <option value='AUTO' selected>AUTO</option>
       <option value='CIX'>CIX</option>
       <option value='CBI'>CBI</option>
       <option value='COMET'>COMET</option>
     </select>
     <button onclick='readMetadata()'>Read metadata</button>
+    <span id='styleInfo' class='muted'></span>
   </div>
 
   <div class='row'>
@@ -71,12 +76,99 @@ INDEX_HTML = """<!doctype html>
   <h3>Metadata (JSON)</h3>
   <textarea id='metadataJson' placeholder='Read metadata first, then edit JSON fields...'></textarea>
 
-  <h3>ComicVine results</h3>
-  <textarea id='comicvineJson' placeholder='ComicVine search results appear here...'></textarea>
+  <h3>ComicVine issue candidates</h3>
+  <div class='muted'>Match hint compares your loaded metadata (series/issue/year/volume) against returned issue rows.</div>
+  <table id='issueTable'>
+    <thead><tr><th>Match hint</th><th>Issue #</th><th>Series</th><th>Volume start</th><th>Cover date</th><th>Issue ID</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <h3>ComicVine series candidates</h3>
+  <table id='seriesTable'>
+    <thead><tr><th>Name</th><th>Start year</th><th>Issue count</th><th>ID</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <details>
+    <summary>Raw ComicVine JSON</summary>
+    <textarea id='comicvineJson' placeholder='ComicVine search results appear here...'></textarea>
+  </details>
 
   <script>
     function showJson(id, obj) {
       document.getElementById(id).value = JSON.stringify(obj, null, 2);
+    }
+
+    function normalizeIssue(val) {
+      const s = String(val || '').trim();
+      if (!s) return '';
+      const m = s.match(/^(\\d+)(.*)$/);
+      if (!m) return s.toLowerCase();
+      const n = String(parseInt(m[1], 10));
+      return (Number.isNaN(parseInt(m[1], 10)) ? m[1] : n) + (m[2] || '').toLowerCase();
+    }
+
+    function parseLoadedMetadata() {
+      try {
+        const raw = JSON.parse(document.getElementById('metadataJson').value || '{}');
+        return raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : raw;
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function looksLikeMatch(md, issue) {
+      const mdSeries = String(md.series || '').toLowerCase();
+      const mdIssue = normalizeIssue(md.issue || '');
+      const mdYear = String(md.year || '').trim();
+      const mdVolume = String(md.volume || '').trim();
+
+      const issueNum = normalizeIssue(issue.issue_number || '');
+      const volume = issue.volume || {};
+      const volumeName = String(volume.name || '').toLowerCase();
+      const volumeYear = String(volume.start_year || '').trim();
+
+      const issueMatch = mdIssue && issueNum && mdIssue === issueNum;
+      const seriesMatch = mdSeries && volumeName && (mdSeries === volumeName || volumeName.includes(mdSeries));
+      const yearMatch = mdYear && volumeYear && mdYear === volumeYear;
+      const volumeMatch = mdVolume && volumeYear && mdVolume === volumeYear;
+
+      const score = [issueMatch, seriesMatch, yearMatch || volumeMatch].filter(Boolean).length;
+      if (score >= 2) return {label: 'Likely', cls: 'good'};
+      if (score === 1) return {label: 'Possible', cls: 'warn'};
+      return {label: 'Unclear', cls: 'warn'};
+    }
+
+    function renderComicVine(data) {
+      const md = parseLoadedMetadata();
+
+      const issueBody = document.querySelector('#issueTable tbody');
+      issueBody.innerHTML = '';
+      (data.issues || []).forEach(i => {
+        const volume = i.volume || {};
+        const hint = looksLikeMatch(md, i);
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          `<td><span class='pill ${hint.cls}'>${hint.label}</span></td>` +
+          `<td>${i.issue_number || ''}</td>` +
+          `<td>${volume.name || ''}</td>` +
+          `<td>${volume.start_year || ''}</td>` +
+          `<td>${i.cover_date || ''}</td>` +
+          `<td>${i.id || ''}</td>`;
+        issueBody.appendChild(tr);
+      });
+
+      const seriesBody = document.querySelector('#seriesTable tbody');
+      seriesBody.innerHTML = '';
+      (data.series || []).forEach(s => {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          `<td>${s.name || ''}</td>` +
+          `<td>${s.start_year || ''}</td>` +
+          `<td>${s.count_of_issues || ''}</td>` +
+          `<td>${s.id || ''}</td>`;
+        seriesBody.appendChild(tr);
+      });
     }
 
     async function scanLibrary() {
@@ -99,7 +191,12 @@ INDEX_HTML = """<!doctype html>
       const style = document.getElementById('style').value;
       if (!path) return alert('Select or enter a comic file path first.');
       const res = await fetch('/api/read?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style));
-      showJson('metadataJson', await res.json());
+      const data = await res.json();
+      showJson('metadataJson', data);
+      if (data.style) {
+        document.getElementById('style').value = data.style;
+      }
+      document.getElementById('styleInfo').textContent = data.detected_style ? `Detected: ${data.detected_style}` : '';
     }
 
     async function writeMetadata() {
@@ -110,7 +207,6 @@ INDEX_HTML = """<!doctype html>
       try { obj = JSON.parse(document.getElementById('metadataJson').value || '{}'); }
       catch (e) { return alert('Metadata JSON is invalid: ' + e); }
 
-      // Accept either {metadata:{...}} or a plain metadata object
       const patch = obj.metadata && typeof obj.metadata === 'object' ? obj.metadata : obj;
       const res = await fetch('/api/write', {
         method: 'POST',
@@ -127,7 +223,9 @@ INDEX_HTML = """<!doctype html>
       const qp = '/api/comicvine/search?query=' + encodeURIComponent(query)
         + (apiKey ? '&api_key=' + encodeURIComponent(apiKey) : '');
       const res = await fetch(qp);
-      showJson('comicvineJson', await res.json());
+      const data = await res.json();
+      showJson('comicvineJson', data);
+      renderComicVine(data);
     }
   </script>
 </body>
@@ -168,8 +266,15 @@ def apply_metadata(md, patch):
             setattr(md, k, v)
 
 
+def detect_style(ca):
+    for style_name in ("CIX", "CBI", "COMET"):
+        if ca.hasMetadata(STYLE_MAP[style_name]):
+            return style_name
+    return "CIX"
+
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ComicWebUI/0.2"
+    server_version = "ComicWebUI/0.3"
 
     def _comicvine_client(self, qs):
         user_key = qs.get("api_key", [""])[0].strip()
@@ -227,14 +332,24 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/read":
             path = qs.get("path", [""])[0]
-            style = qs.get("style", ["CIX"])[0].upper()
+            style = qs.get("style", ["AUTO"])[0].upper()
             if not path:
                 return self._json(400, {"error": "path query param required"})
-            if style not in STYLE_MAP:
-                return self._json(400, {"error": "style must be one of CIX/CBI/COMET"})
+            if style != "AUTO" and style not in STYLE_MAP:
+                return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
             ca = ComicArchive(path, default_image_path=path)
-            md = ca.readMetadata(STYLE_MAP[style])
-            return self._json(200, {"path": path, "style": style, "metadata": metadata_to_dict(md)})
+            detected_style = detect_style(ca)
+            use_style = detected_style if style == "AUTO" else style
+            md = ca.readMetadata(STYLE_MAP[use_style])
+            return self._json(
+                200,
+                {
+                    "path": path,
+                    "style": use_style,
+                    "detected_style": detected_style,
+                    "metadata": metadata_to_dict(md),
+                },
+            )
 
         if parsed.path == "/api/comicvine/search":
             query = qs.get("query", [""])[0]
@@ -256,18 +371,22 @@ class Handler(BaseHTTPRequestHandler):
 
         payload = self._read_json()
         path = payload.get("path", "")
-        style = str(payload.get("style", "CIX")).upper()
+        style = str(payload.get("style", "AUTO")).upper()
         patch = payload.get("metadata", {})
-        if not path or style not in STYLE_MAP:
-            return self._json(400, {"error": "path and valid style required"})
+        if not path:
+            return self._json(400, {"error": "path is required"})
+        if style != "AUTO" and style not in STYLE_MAP:
+            return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
 
         ca = ComicArchive(path, default_image_path=path)
-        md = ca.readMetadata(STYLE_MAP[style])
+        detected_style = detect_style(ca)
+        use_style = detected_style if style == "AUTO" else style
+        md = ca.readMetadata(STYLE_MAP[use_style])
         if getattr(md, "isEmpty", False):
             md = ca.metadataFromFilename(parse_scan_info=True)
         apply_metadata(md, patch)
-        ok = ca.writeMetadata(md, STYLE_MAP[style])
-        return self._json(200, {"ok": bool(ok), "path": path, "style": style})
+        ok = ca.writeMetadata(md, STYLE_MAP[use_style])
+        return self._json(200, {"ok": bool(ok), "path": path, "style": use_style, "detected_style": detected_style})
 
 
 def run(host="127.0.0.1", port=8080):

@@ -31,8 +31,9 @@ import shutil
 try:
     from natsort import natsorted
 except ImportError:
-    def natsorted(iterable):
-        return sorted(iterable)
+    def natsorted(iterable, *args, **kwargs):
+        key = kwargs.get("key")
+        return sorted(iterable, key=key)
 
 try:
     from unrar import rarfile
