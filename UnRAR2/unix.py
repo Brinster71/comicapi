@@ -28,7 +28,7 @@ import gc
 import os, os.path
 import time, re
 
-from rar_exceptions import *
+from .rar_exceptions import *
 
 class UnpackerNotInstalled(Exception): pass
 
@@ -65,6 +65,10 @@ class RarFileImplementation(object):
         
         
         stdoutdata, stderrdata = self.call('v', []).communicate()
+        if isinstance(stdoutdata, bytes):
+            stdoutdata = stdoutdata.decode(errors='replace')
+        if isinstance(stderrdata, bytes):
+            stderrdata = stderrdata.decode(errors='replace')
         
         for line in stderrdata.splitlines():
             if line.strip().startswith("Cannot open"):
@@ -75,7 +79,7 @@ class RarFileImplementation(object):
         source = iter(stdoutdata.splitlines())
         line = ''
         while not (line.startswith('UNRAR')):
-            line = source.next()
+            line = next(source)
         signature = line
         # The code below is mighty flaky
         # and will probably crash on localized versions of RAR
@@ -85,10 +89,10 @@ class RarFileImplementation(object):
             while not (line.startswith('Comment:') or line.startswith('Pathname/Comment')):
                 if line.strip().endswith('is not RAR archive'):
                     raise InvalidRARArchive
-                line = source.next()
+                line = next(source)
             while not line.startswith('Pathname/Comment'):
                 accum.append(line.rstrip('\n'))
-                line = source.next()
+                line = next(source)
             if len(accum):
                 accum[0] = accum[0][9:] # strip out "Comment:" part
                 self.comment = '\n'.join(accum[:-1])
@@ -96,12 +100,12 @@ class RarFileImplementation(object):
                 self.comment = None
         elif signature.startswith("UNRAR 5"):
             rar_executable_version = 5
-            line = source.next()
+            line = next(source)
             while not line.startswith('Archive:'):
                 if line.strip().endswith('is not RAR archive'):
                     raise InvalidRARArchive
                 accum.append(line.rstrip('\n'))
-                line = source.next()
+                line = next(source)
             if len(accum):
                 self.comment = '\n'.join(accum[:-1]).strip()
             else:
@@ -124,6 +128,10 @@ class RarFileImplementation(object):
         
         command = "v" if rar_executable_version == 4 else "l"
         stdoutdata, stderrdata = self.call(command, ['c-']).communicate()
+        if isinstance(stdoutdata, bytes):
+            stdoutdata = stdoutdata.decode(errors='replace')
+        if isinstance(stderrdata, bytes):
+            stderrdata = stderrdata.decode(errors='replace')
         
         for line in stderrdata.splitlines():
             if line.strip().startswith("Cannot open"):
@@ -137,8 +145,8 @@ class RarFileImplementation(object):
                 raise InvalidRARArchive
             if line.startswith("CRC failed") or line.startswith("Checksum error"):
                 raise IncorrectRARPassword  
-            line = source.next()
-        line = source.next()
+            line = next(source)
+        line = next(source)
         i = 0
         re_spaces = re.compile(r"\s+")
         if rar_executable_version == 4:
@@ -158,7 +166,7 @@ class RarFileImplementation(object):
                     yield data
                     accum = []
                     i += 1
-                line = source.next()
+                line = next(source)
         elif rar_executable_version == 5:
             while not line.startswith('-----------'):
                 fields = line.strip().lstrip("*").split()
@@ -172,7 +180,7 @@ class RarFileImplementation(object):
                 data['comment'] = None
                 yield data
                 i += 1
-                line = source.next()
+                line = next(source)
             
 
     def read_files(self, checker):
@@ -200,7 +208,7 @@ class RarFileImplementation(object):
         names = []
         for info in self.infoiter():
             checkres = checker(info)
-            if type(checkres) in [str, unicode]:
+            if isinstance(checkres, str):
                 raise NotImplementedError("Condition callbacks returning strings are deprecated and only supported in Windows")
             if checkres==True and not info.isdir:
                 names.append(info.filename)
@@ -208,6 +216,8 @@ class RarFileImplementation(object):
         names.append(path)
         proc = self.call(command, options, names)
         stdoutdata, stderrdata = proc.communicate()
+        if isinstance(stderrdata, bytes):
+            stderrdata = stderrdata.decode(errors='replace')
         if stderrdata.find("CRC failed")>=0 or stderrdata.find("Checksum error")>=0:
             raise IncorrectRARPassword  
         return res            
