@@ -28,48 +28,61 @@ import platform
 import locale
 import shutil
 
-from natsort import natsorted
-from unrar import rarfile
-from unrar import unrarlib
-import unrar.constants
+try:
+    from natsort import natsorted
+except ImportError:
+    def natsorted(iterable):
+        return sorted(iterable)
+
+try:
+    from unrar import rarfile
+    from unrar import unrarlib
+    from unrar import constants
+    import unrar.constants
+except ImportError:
+    rarfile = None
+    unrarlib = None
+    constants = None
+
 import ctypes
 import io
-from unrar import constants
 
-class OpenableRarFile(rarfile.RarFile):
-    def open(self, member):
-        #print "opening %s..." % member
-        # based on https://github.com/matiasb/python-unrar/pull/4/files
-        res = []
-        if isinstance(member, rarfile.RarInfo):
-            member = member.filename
-        archive = unrarlib.RAROpenArchiveDataEx(self.filename, mode=constants.RAR_OM_EXTRACT)
-        handle = self._open(archive)
-        found, buf = False, []
-        def _callback(msg, UserData, P1, P2):
-            if msg == constants.UCM_PROCESSDATA:
-                data = (ctypes.c_char*P2).from_address(P1).raw
-                buf.append(data)
-            return 1
-        c_callback = unrarlib.UNRARCALLBACK(_callback)
-        unrarlib.RARSetCallback(handle, c_callback, 1)
-        try:
-            rarinfo = self._read_header(handle)
-            while rarinfo is not None:
-                #print "checking rar archive %s against %s" % (rarinfo.filename, member)
-                if rarinfo.filename == member:
-                    self._process_current(handle, constants.RAR_TEST)
-                    found = True
-                else:
-                    self._process_current(handle, constants.RAR_SKIP)
+if rarfile is not None and unrarlib is not None and constants is not None:
+    class OpenableRarFile(rarfile.RarFile):
+        def open(self, member):
+            # based on https://github.com/matiasb/python-unrar/pull/4/files
+            if isinstance(member, rarfile.RarInfo):
+                member = member.filename
+            archive = unrarlib.RAROpenArchiveDataEx(self.filename, mode=constants.RAR_OM_EXTRACT)
+            handle = self._open(archive)
+            found, buf = False, []
+
+            def _callback(msg, UserData, P1, P2):
+                if msg == constants.UCM_PROCESSDATA:
+                    data = (ctypes.c_char * P2).from_address(P1).raw
+                    buf.append(data)
+                return 1
+
+            c_callback = unrarlib.UNRARCALLBACK(_callback)
+            unrarlib.RARSetCallback(handle, c_callback, 1)
+            try:
                 rarinfo = self._read_header(handle)
-        except unrarlib.UnrarException:
-            raise rarfile.BadRarFile("Bad RAR archive data.")
-        finally:
-            self._close(handle)
-        if not found:
-            raise KeyError('There is no item named %r in the archive' % member)
-        return ''.join(buf)
+                while rarinfo is not None:
+                    if rarinfo.filename == member:
+                        self._process_current(handle, constants.RAR_TEST)
+                        found = True
+                    else:
+                        self._process_current(handle, constants.RAR_SKIP)
+                    rarinfo = self._read_header(handle)
+            except unrarlib.UnrarException:
+                raise rarfile.BadRarFile("Bad RAR archive data.")
+            finally:
+                self._close(handle)
+            if not found:
+                raise KeyError('There is no item named %r in the archive' % member)
+            return b''.join(buf)
+else:
+    OpenableRarFile = None
 
 
 if platform.system() == "Windows":
@@ -93,7 +106,10 @@ from .comicbookinfo import ComicBookInfo
 from .comet import CoMet
 from .genericmetadata import GenericMetadata, PageType
 from .filenameparser import FileNameParser
-from PyPDF2 import PdfFileReader
+try:
+    from PyPDF2 import PdfFileReader
+except ImportError:
+    PdfFileReader = None
 
 class MetaDataStyle:
     CBI = 0
@@ -580,6 +596,8 @@ class PdfArchiver:
         return False
     def getArchiveFilenameList( self ):
         out = []
+        if PdfFileReader is None:
+            return out
         pdf = PdfFileReader(open(self.path, 'rb'))
         for page in range(1, pdf.getNumPages() + 1):
             out.append("/%04d.jpg" % (page))
@@ -624,15 +642,18 @@ class ComicArchive:
             elif self.rarTest():
                 self.archive_type =  self.ArchiveType.Rar
                 self.archiver = RarArchiver( self.path, rar_exe_path=self.rar_exe_path )
-            elif os.path.basename(self.path)[-3:] == 'pdf':
+            elif os.path.basename(self.path)[-3:] == 'pdf' and PdfFileReader is not None:
                 self.archive_type = self.ArchiveType.Pdf
                 self.archiver = PdfArchiver(self.path)
 
         if ComicArchive.logo_data is None:
-            #fname = ComicTaggerSettings.getGraphic('nocover.png')
+            # fname = ComicTaggerSettings.getGraphic('nocover.png')
             fname = self.default_image_path
-            with open(fname, 'rb') as fd:
-                ComicArchive.logo_data = fd.read()
+            if fname and os.path.exists(fname):
+                with open(fname, 'rb') as fd:
+                    ComicArchive.logo_data = fd.read()
+            else:
+                ComicArchive.logo_data = b""
 
     # Clears the cached data
     def resetCache( self ):
@@ -658,9 +679,11 @@ class ComicArchive:
         return zipfile.is_zipfile( self.path )
 
     def rarTest( self ):
+        if rarfile is None:
+            return False
         try:
-            rarc = rarfile.RarFile( self.path )
-        except: # InvalidRARArchive:
+            rarfile.RarFile( self.path )
+        except Exception:
             return False
         else:
             return True
