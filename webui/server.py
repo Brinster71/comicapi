@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -48,6 +49,8 @@ INDEX_HTML = """<!doctype html>
   <div class='row'>
     <label>Selected file:</label>
     <input id='comicPath' type='text' placeholder='/path/to/file.cbz'>
+    <label>Write to:</label>
+    <input id='writePath' type='text' placeholder='/path/to/output.cbz (defaults to selected file)'>
     <label>Style:</label>
     <select id='style'>
       <option value='AUTO' selected>AUTO</option>
@@ -110,10 +113,10 @@ INDEX_HTML = """<!doctype html>
     <div class='mapping-grid'>
       <input type='checkbox' id='use_series' checked><label for='use_series'>Series</label><input id='map_series' type='text'>
       <input type='checkbox' id='use_issue' checked><label for='use_issue'>Issue</label><input id='map_issue' type='text'>
-      <input type='checkbox' id='use_title' checked><label for='use_title'>Title</label><input id='map_title' type='text'>
+      <input type='checkbox' id='use_title' checked><label for='use_title'>Title</label><div><input id='map_title' type='text'><select id='title_source' onchange='applyAltSource("title")'><option value='manual'>manual</option><option value='issue_name'>issue.name</option><option value='series_first_issue_name'>series.first_issue.name</option><option value='series_name'>series.name</option><option value='deck'>deck</option><option value='description'>description</option></select></div>
       <input type='checkbox' id='use_publisher' checked><label for='use_publisher'>Publisher</label><input id='map_publisher' type='text'>
       <input type='checkbox' id='use_year' checked><label for='use_year'>Year (published)</label><input id='map_year' type='text'>
-      <input type='checkbox' id='use_volume' checked><label for='use_volume'>Volume</label><input id='map_volume' type='text'>
+      <input type='checkbox' id='use_volume' checked><label for='use_volume'>Volume</label><div><input id='map_volume' type='text'><select id='volume_source' onchange='applyAltSource("volume")'><option value='manual'>manual</option><option value='series_start_year'>series.start_year</option><option value='one'>1</option></select></div>
       <input type='checkbox' id='use_start_year' checked><label for='use_start_year'>Start year</label><input id='map_start_year' type='text'>
       <input type='checkbox' id='use_published_year' checked><label for='use_published_year'>Published year</label><input id='map_published_year' type='text'>
       <input type='checkbox' id='use_issue_name' checked><label for='use_issue_name'>Issue name</label><input id='map_issue_name' type='text'>
@@ -135,6 +138,53 @@ INDEX_HTML = """<!doctype html>
   <script>
     function showJson(id, obj) {
       document.getElementById(id).value = JSON.stringify(obj, null, 2);
+    }
+
+    const appState = { lastIssue: null, lastSeries: null };
+
+    function savePersistentFields() {
+      localStorage.setItem('comicapi.rootPath', document.getElementById('rootPath').value || '');
+      localStorage.setItem('comicapi.apiKey', document.getElementById('apiKey').value || '');
+      localStorage.setItem('comicapi.comicPath', document.getElementById('comicPath').value || '');
+      localStorage.setItem('comicapi.writePath', document.getElementById('writePath').value || '');
+    }
+
+    function loadPersistentFields() {
+      document.getElementById('rootPath').value = localStorage.getItem('comicapi.rootPath') || '';
+      document.getElementById('apiKey').value = localStorage.getItem('comicapi.apiKey') || '';
+      document.getElementById('comicPath').value = localStorage.getItem('comicapi.comicPath') || '';
+      document.getElementById('writePath').value = localStorage.getItem('comicapi.writePath') || '';
+      if (!document.getElementById('writePath').value) {
+        document.getElementById('writePath').value = document.getElementById('comicPath').value;
+      }
+      ['rootPath','apiKey','comicPath','writePath'].forEach(id => {
+        document.getElementById(id).addEventListener('change', savePersistentFields);
+      });
+    }
+
+    function applyAltSource(target) {
+      if (target === 'title') {
+        const src = document.getElementById('title_source').value;
+        const issue = appState.lastIssue || {};
+        const series = appState.lastSeries || {};
+        const first = series.first_issue || {};
+        const pick = {
+          manual: document.getElementById('map_title').value,
+          issue_name: issue.name || '',
+          series_first_issue_name: first.name || '',
+          series_name: series.name || '',
+          deck: issue.deck || series.deck || '',
+          description: issue.description || series.description || '',
+        };
+        document.getElementById('map_title').value = pick[src] || '';
+      }
+      if (target === 'volume') {
+        const src = document.getElementById('volume_source').value;
+        const issue = appState.lastIssue || {};
+        const volume = issue.volume || {};
+        if (src === 'series_start_year') document.getElementById('map_volume').value = volume.start_year || '';
+        else if (src === 'one') document.getElementById('map_volume').value = '1';
+      }
     }
 
     function normalizeIssue(val) {
@@ -198,13 +248,14 @@ INDEX_HTML = """<!doctype html>
     }
 
     function fillMappingFromIssue(issue) {
+      appState.lastIssue = issue || {};
       const volume = issue.volume || {};
       const coverDate = String(issue.cover_date || '');
       const publishedYear = coverDate.length >= 4 ? coverDate.slice(0,4) : '';
       const pub = volume.publisher ? (volume.publisher.name || '') : '';
       document.getElementById('map_series').value = volume.name || '';
       document.getElementById('map_issue').value = issue.issue_number || '';
-      document.getElementById('map_title').value = issue.name || '';
+      document.getElementById('map_title').value = issue.name || issue.title || '';
       document.getElementById('map_issue_name').value = issue.name || '';
       document.getElementById('map_year').value = publishedYear;
       document.getElementById('map_published_year').value = publishedYear;
@@ -247,9 +298,13 @@ INDEX_HTML = """<!doctype html>
           `<td>${s.count_of_issues || ''}</td>` +
           `<td>${s.id || ''}</td>`;
         tr.onclick = () => {
+          appState.lastSeries = s || {};
           document.getElementById('map_series').value = s.name || '';
           document.getElementById('map_start_year').value = s.start_year || '';
           document.getElementById('map_series_id').value = s.id || '';
+          if (s.first_issue && s.first_issue.name && !document.getElementById('map_title').value) {
+            document.getElementById('map_title').value = s.first_issue.name;
+          }
         };
         seriesBody.appendChild(tr);
       });
@@ -265,19 +320,22 @@ INDEX_HTML = """<!doctype html>
       (data.results || []).forEach(r => {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${r.path || ''}</td><td>${r.pages ?? ''}</td><td>${r.has_cix ?? ''}</td><td>${r.has_cbi ?? ''}</td><td>${r.has_comet ?? ''}</td><td>${r.error || ''}</td>`;
-        tr.onclick = () => { if (r.path) document.getElementById('comicPath').value = r.path; };
+        tr.onclick = () => { if (r.path) { document.getElementById('comicPath').value = r.path; if (!document.getElementById('writePath').value) document.getElementById('writePath').value = r.path; savePersistentFields(); } };
         tbody.appendChild(tr);
       });
     }
 
     async function readMetadata() {
       const path = document.getElementById('comicPath').value.trim();
+      const writePath = (document.getElementById('writePath').value || '').trim();
       const style = document.getElementById('style').value;
       if (!path) return alert('Select or enter a comic file path first.');
       const res = await fetch('/api/read?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style));
       const data = await res.json();
       showJson('metadataJson', data);
       if (data.style) document.getElementById('style').value = data.style;
+      if (!document.getElementById('writePath').value) document.getElementById('writePath').value = path;
+      savePersistentFields();
       document.getElementById('styleInfo').textContent = data.detected_style ? `Detected: ${data.detected_style}` : 'Detected: none';
       renderSummary(data.summary || {});
       const thumb = '/api/thumbnail?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style) + '&_=' + Date.now();
@@ -324,13 +382,14 @@ INDEX_HTML = """<!doctype html>
 
     async function writeFromJsonPayload(payload) {
       const path = document.getElementById('comicPath').value.trim();
+      const writePath = (document.getElementById('writePath').value || '').trim();
       const style = document.getElementById('style').value;
       if (!path) return alert('Select or enter a comic file path first.');
       const patch = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : payload;
       const res = await fetch('/api/write', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ path, style, metadata: patch })
+        body: JSON.stringify({ path, write_path: writePath, style, metadata: patch })
       });
       showJson('metadataJson', await res.json());
     }
@@ -360,6 +419,8 @@ INDEX_HTML = """<!doctype html>
       showJson('comicvineJson', data);
       renderComicVine(data);
     }
+
+    loadPersistentFields();
   </script>
 </body>
 </html>"""
@@ -591,6 +652,7 @@ class Handler(BaseHTTPRequestHandler):
 
         payload = self._read_json()
         path = payload.get("path", "")
+        write_path = payload.get("write_path", "")
         style = str(payload.get("style", "AUTO")).upper()
         patch = payload.get("metadata", {})
         if not path:
@@ -598,7 +660,14 @@ class Handler(BaseHTTPRequestHandler):
         if style != "AUTO" and style not in STYLE_MAP:
             return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
 
-        ca = ComicArchive(path, default_image_path=path)
+        target_path = write_path.strip() or path
+        if target_path != path:
+            target_dir = os.path.dirname(os.path.abspath(target_path))
+            if target_dir and not os.path.exists(target_dir):
+                os.makedirs(target_dir, exist_ok=True)
+            shutil.copy2(path, target_path)
+
+        ca = ComicArchive(target_path, default_image_path=target_path)
         detected_style = detect_style(ca)
         use_style = choose_style(style, detected_style)
         md = ca.readMetadata(STYLE_MAP[use_style])
@@ -606,7 +675,7 @@ class Handler(BaseHTTPRequestHandler):
             md = ca.metadataFromFilename(parse_scan_info=True)
         apply_metadata(md, patch)
         ok = ca.writeMetadata(md, STYLE_MAP[use_style])
-        return self._json(200, {"ok": bool(ok), "path": path, "style": use_style, "detected_style": detected_style})
+        return self._json(200, {"ok": bool(ok), "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
 
 
 def run(host="127.0.0.1", port=8080):
