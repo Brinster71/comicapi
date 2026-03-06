@@ -22,8 +22,8 @@ from datetime import datetime
 import zipfile
 from pprint import pprint 
 import xml.etree.ElementTree as ET
-from genericmetadata import GenericMetadata
-import utils
+from .genericmetadata import GenericMetadata
+from . import utils
 
 class ComicInfoXml:
 	
