@@ -23,8 +23,8 @@ import json
 from datetime import datetime
 import zipfile
 
-from genericmetadata import GenericMetadata
-import utils
+from .genericmetadata import GenericMetadata
+from . import utils
 #import ctversion
 
 class ComicBookInfo:
@@ -32,7 +32,9 @@ class ComicBookInfo:
 
 	def metadataFromString( self, string ):
 	
-		cbi_container = json.loads( unicode(string, 'utf-8') )
+		if isinstance(string, bytes):
+			string = string.decode('utf-8', errors='replace')
+		cbi_container = json.loads(string)
 
 		metadata = GenericMetadata()
 
@@ -115,7 +117,7 @@ class ComicBookInfo:
 		#helper func
 		def toInt(s):
 			i = None
-			if type(s) in [ str, unicode, int ]:
+			if isinstance(s, (str, int)):
 				try:
 					i = int(s)
 				except ValueError:
