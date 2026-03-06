@@ -19,7 +19,7 @@ INDEX_HTML = """<!doctype html>
     body { font-family: system-ui, sans-serif; margin: 1rem; }
     .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: .5rem; }
     input, select, button, textarea { padding: .4rem; }
-    input[type=text] { min-width: 20rem; }
+    input[type=text] { min-width: 18rem; }
     textarea { width: 100%; min-height: 12rem; font-family: ui-monospace, monospace; }
     table { border-collapse: collapse; width: 100%; margin-top: .5rem; }
     th, td { border: 1px solid #ddd; padding: .35rem; text-align: left; }
@@ -28,11 +28,16 @@ INDEX_HTML = """<!doctype html>
     .pill { border-radius: 999px; padding: .1rem .5rem; font-size: .8rem; }
     .good { background: #d7f6dd; color: #145a2a; }
     .warn { background: #fff3cd; color: #7a5b00; }
+    .grid2 { display:grid; grid-template-columns: 220px 1fr; gap:.4rem .8rem; align-items:start; }
+    .meta-card { border:1px solid #ddd; padding:.8rem; border-radius:.5rem; margin:.6rem 0; }
+    .thumb { width:180px; height:260px; object-fit:contain; border:1px solid #ddd; background:#fafafa; }
+    .mapping-grid { display:grid; grid-template-columns: 22px 120px 1fr; gap:.35rem .5rem; align-items:center; margin:.4rem 0; }
+    .small { font-size:.85rem; }
   </style>
 </head>
 <body>
   <h2>Comic Metadata UI</h2>
-  <p class='muted'>Scan comics, read/edit metadata, and query ComicVine (API key can be entered below).</p>
+  <p class='muted'>Single-comic workflow: scan, inspect detected metadata, search ComicVine, choose fields, apply, then write.</p>
 
   <div class='row'>
     <label>Library path:</label>
@@ -58,12 +63,8 @@ INDEX_HTML = """<!doctype html>
     <label>ComicVine API key:</label>
     <input id='apiKey' type='text' placeholder='paste API key here (or use COMICVINE_API_KEY env var)'>
     <label>Search:</label>
-    <input id='cvQuery' type='text' placeholder='Batman 2011 1'>
+    <input id='cvQuery' type='text' placeholder='Series + issue, e.g. American Splendor 1'>
     <button onclick='searchComicVine()'>Search ComicVine</button>
-  </div>
-
-  <div class='row'>
-    <button onclick='writeMetadata()'>Write metadata patch to selected file</button>
   </div>
 
   <h3>Scan results</h3>
@@ -73,11 +74,23 @@ INDEX_HTML = """<!doctype html>
     <tbody></tbody>
   </table>
 
-  <h3>Metadata (JSON)</h3>
-  <textarea id='metadataJson' placeholder='Read metadata first, then edit JSON fields...'></textarea>
+  <h3>Detected current metadata</h3>
+  <div class='meta-card'>
+    <div class='row'>
+      <img id='coverThumb' class='thumb' alt='Cover preview'>
+      <div style='flex:1'>
+        <div id='metadataSummary' class='grid2 small'></div>
+      </div>
+    </div>
+  </div>
+
+  <details>
+    <summary>Raw detected metadata JSON</summary>
+    <textarea id='metadataJson' placeholder='Read metadata first, then edit JSON fields...'></textarea>
+  </details>
 
   <h3>ComicVine issue candidates</h3>
-  <div class='muted'>Match hint compares your loaded metadata (series/issue/year/volume) against returned issue rows.</div>
+  <div class='muted'>Click a row to prefill selectable mapping fields. Match hint compares your loaded metadata against candidate issue/series/year.</div>
   <table id='issueTable'>
     <thead><tr><th>Match hint</th><th>Issue #</th><th>Series</th><th>Volume start</th><th>Cover date</th><th>Issue ID</th></tr></thead>
     <tbody></tbody>
@@ -88,6 +101,22 @@ INDEX_HTML = """<!doctype html>
     <thead><tr><th>Name</th><th>Start year</th><th>Issue count</th><th>ID</th></tr></thead>
     <tbody></tbody>
   </table>
+
+  <h3>Selected field mapping</h3>
+  <div class='meta-card'>
+    <div class='mapping-grid'>
+      <input type='checkbox' id='use_series' checked><label for='use_series'>Series</label><input id='map_series' type='text'>
+      <input type='checkbox' id='use_issue' checked><label for='use_issue'>Issue</label><input id='map_issue' type='text'>
+      <input type='checkbox' id='use_year' checked><label for='use_year'>Year</label><input id='map_year' type='text'>
+      <input type='checkbox' id='use_volume' checked><label for='use_volume'>Volume</label><input id='map_volume' type='text'>
+      <input type='checkbox' id='use_title' checked><label for='use_title'>Title</label><input id='map_title' type='text'>
+      <input type='checkbox' id='use_publisher' checked><label for='use_publisher'>Publisher</label><input id='map_publisher' type='text'>
+    </div>
+    <div class='row'>
+      <button onclick='applySelectedComicVineFields()'>Apply selected ComicVine fields to metadata JSON</button>
+      <button onclick='writeMetadata()'>Write metadata to selected file</button>
+    </div>
+  </div>
 
   <details>
     <summary>Raw ComicVine JSON</summary>
@@ -117,6 +146,21 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
+    function renderSummary(summary) {
+      const el = document.getElementById('metadataSummary');
+      const rows = [
+        ['Series', summary.series || ''],
+        ['Issue', summary.issue || ''],
+        ['Title', summary.title || ''],
+        ['Volume', summary.volume || ''],
+        ['Year', summary.year || ''],
+        ['Publisher', summary.publisher || ''],
+        ['Detected style', summary.detected_style || 'None'],
+        ['Used style', summary.used_style || ''],
+      ];
+      el.innerHTML = rows.map(([k,v]) => `<div class='muted'><b>${k}</b></div><div>${v || '<span class="muted">(empty)</span>'}</div>`).join('');
+    }
+
     function looksLikeMatch(md, issue) {
       const mdSeries = String(md.series || '').toLowerCase();
       const mdIssue = normalizeIssue(md.issue || '');
@@ -139,6 +183,19 @@ INDEX_HTML = """<!doctype html>
       return {label: 'Unclear', cls: 'warn'};
     }
 
+    function fillMappingFromIssue(issue) {
+      const volume = issue.volume || {};
+      const cover = String(issue.cover_date || '');
+      const year = cover.length >= 4 ? cover.slice(0,4) : '';
+      const pub = volume.publisher ? (volume.publisher.name || '') : '';
+      document.getElementById('map_series').value = volume.name || '';
+      document.getElementById('map_issue').value = issue.issue_number || '';
+      document.getElementById('map_year').value = year;
+      document.getElementById('map_volume').value = volume.start_year || '';
+      document.getElementById('map_title').value = issue.name || '';
+      document.getElementById('map_publisher').value = pub;
+    }
+
     function renderComicVine(data) {
       const md = parseLoadedMetadata();
 
@@ -155,6 +212,7 @@ INDEX_HTML = """<!doctype html>
           `<td>${volume.start_year || ''}</td>` +
           `<td>${i.cover_date || ''}</td>` +
           `<td>${i.id || ''}</td>`;
+        tr.onclick = () => fillMappingFromIssue(i);
         issueBody.appendChild(tr);
       });
 
@@ -167,6 +225,10 @@ INDEX_HTML = """<!doctype html>
           `<td>${s.start_year || ''}</td>` +
           `<td>${s.count_of_issues || ''}</td>` +
           `<td>${s.id || ''}</td>`;
+        tr.onclick = () => {
+          document.getElementById('map_series').value = s.name || '';
+          document.getElementById('map_volume').value = s.start_year || '';
+        };
         seriesBody.appendChild(tr);
       });
     }
@@ -193,10 +255,43 @@ INDEX_HTML = """<!doctype html>
       const res = await fetch('/api/read?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style));
       const data = await res.json();
       showJson('metadataJson', data);
-      if (data.style) {
-        document.getElementById('style').value = data.style;
+      if (data.style) document.getElementById('style').value = data.style;
+      document.getElementById('styleInfo').textContent = data.detected_style ? `Detected: ${data.detected_style}` : 'Detected: none';
+      renderSummary(data.summary || {});
+      const thumb = '/api/thumbnail?path=' + encodeURIComponent(path) + '&_=' + Date.now();
+      document.getElementById('coverThumb').src = thumb;
+    }
+
+    function applySelectedComicVineFields() {
+      let wrapper;
+      try {
+        wrapper = JSON.parse(document.getElementById('metadataJson').value || '{}');
+      } catch (e) {
+        return alert('Metadata JSON is invalid: ' + e);
       }
-      document.getElementById('styleInfo').textContent = data.detected_style ? `Detected: ${data.detected_style}` : '';
+      const md = (wrapper.metadata && typeof wrapper.metadata === 'object') ? wrapper.metadata : wrapper;
+
+      const fields = [
+        ['series', 'use_series', 'map_series'],
+        ['issue', 'use_issue', 'map_issue'],
+        ['year', 'use_year', 'map_year'],
+        ['volume', 'use_volume', 'map_volume'],
+        ['title', 'use_title', 'map_title'],
+        ['publisher', 'use_publisher', 'map_publisher'],
+      ];
+      fields.forEach(([k, c, i]) => {
+        if (document.getElementById(c).checked) {
+          const v = document.getElementById(i).value;
+          md[k] = v === '' ? null : v;
+        }
+      });
+
+      if (wrapper.metadata && typeof wrapper.metadata === 'object') {
+        wrapper.metadata = md;
+        showJson('metadataJson', wrapper);
+      } else {
+        showJson('metadataJson', md);
+      }
     }
 
     async function writeMetadata() {
@@ -260,6 +355,19 @@ def metadata_to_dict(md):
     return out
 
 
+def metadata_summary(md_dict, detected_style, used_style):
+    return {
+        "series": md_dict.get("series"),
+        "issue": md_dict.get("issue"),
+        "title": md_dict.get("title"),
+        "volume": md_dict.get("volume"),
+        "year": md_dict.get("year"),
+        "publisher": md_dict.get("publisher"),
+        "detected_style": detected_style,
+        "used_style": used_style,
+    }
+
+
 def apply_metadata(md, patch):
     for k, v in patch.items():
         if hasattr(md, k):
@@ -270,11 +378,50 @@ def detect_style(ca):
     for style_name in ("CIX", "CBI", "COMET"):
         if ca.hasMetadata(STYLE_MAP[style_name]):
             return style_name
-    return "CIX"
+    return None
+
+
+def choose_style(requested_style, detected_style):
+    if requested_style == "AUTO":
+        return detected_style or "CIX"
+    return requested_style
+
+
+def cover_index_from_metadata(ca, md_dict):
+    pages = md_dict.get("pages") or []
+    for page in pages:
+        ptype = str(page.get("Type", "")).lower()
+        if "frontcover" in ptype:
+            try:
+                return int(page.get("Image", 0))
+            except Exception:
+                return 0
+
+    cover_image_name = md_dict.get("coverImage")
+    if cover_image_name:
+        try:
+            for idx, name in enumerate(ca.getPageNameList()):
+                if name == cover_image_name:
+                    return idx
+        except Exception:
+            pass
+    return 0
+
+
+def guess_content_type(blob):
+    if blob.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if blob.startswith(b"\x89PNG"):
+        return "image/png"
+    if blob.startswith(b"GIF87a") or blob.startswith(b"GIF89a"):
+        return "image/gif"
+    if blob.startswith(b"RIFF") and blob[8:12] == b"WEBP":
+        return "image/webp"
+    return "application/octet-stream"
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ComicWebUI/0.3"
+    server_version = "ComicWebUI/0.4"
 
     def _comicvine_client(self, qs):
         user_key = qs.get("api_key", [""])[0].strip()
@@ -289,6 +436,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _bytes(self, status, payload, content_type):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
 
     def _read_json(self):
         n = int(self.headers.get("Content-Length", "0"))
@@ -339,17 +493,46 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
             ca = ComicArchive(path, default_image_path=path)
             detected_style = detect_style(ca)
-            use_style = detected_style if style == "AUTO" else style
+            use_style = choose_style(style, detected_style)
             md = ca.readMetadata(STYLE_MAP[use_style])
+            md_dict = metadata_to_dict(md)
             return self._json(
                 200,
                 {
                     "path": path,
                     "style": use_style,
                     "detected_style": detected_style,
-                    "metadata": metadata_to_dict(md),
+                    "has_styles": {
+                        "CIX": ca.hasMetadata(MetaDataStyle.CIX),
+                        "CBI": ca.hasMetadata(MetaDataStyle.CBI),
+                        "COMET": ca.hasMetadata(MetaDataStyle.COMET),
+                    },
+                    "metadata": md_dict,
+                    "summary": metadata_summary(md_dict, detected_style, use_style),
                 },
             )
+
+        if parsed.path == "/api/thumbnail":
+            path = qs.get("path", [""])[0]
+            style = qs.get("style", ["AUTO"])[0].upper()
+            if not path:
+                return self._json(400, {"error": "path query param required"})
+            if style != "AUTO" and style not in STYLE_MAP:
+                return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
+            try:
+                ca = ComicArchive(path, default_image_path=path)
+                detected_style = detect_style(ca)
+                use_style = choose_style(style, detected_style)
+                md = ca.readMetadata(STYLE_MAP[use_style])
+                idx = cover_index_from_metadata(ca, metadata_to_dict(md))
+                blob = ca.getPage(idx)
+                if not blob:
+                    blob = ca.getPage(0)
+                if not blob:
+                    return self._json(404, {"error": "No cover/page image found"})
+                return self._bytes(200, blob, guess_content_type(blob))
+            except Exception as exc:
+                return self._json(500, {"error": str(exc)})
 
         if parsed.path == "/api/comicvine/search":
             query = qs.get("query", [""])[0]
@@ -380,7 +563,7 @@ class Handler(BaseHTTPRequestHandler):
 
         ca = ComicArchive(path, default_image_path=path)
         detected_style = detect_style(ca)
-        use_style = detected_style if style == "AUTO" else style
+        use_style = choose_style(style, detected_style)
         md = ca.readMetadata(STYLE_MAP[use_style])
         if getattr(md, "isEmpty", False):
             md = ca.metadataFromFilename(parse_scan_info=True)
