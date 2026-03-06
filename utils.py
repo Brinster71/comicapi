@@ -27,6 +27,11 @@ import platform
 import locale
 import codecs
 
+try:
+	unicode
+except NameError:
+	unicode = str
+
 
 class UtilsVars:
 	already_fixed_encoding = False

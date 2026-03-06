@@ -295,7 +295,7 @@ class RarFileImplementation(object):
                         fn = os.path.split(fn)[-1]
                     target = os.path.join(path, fn)
                 else:
-                    raise DeprecationWarning, "Condition callbacks returning strings are deprecated and only supported in Windows"                    
+                    raise DeprecationWarning("Condition callbacks returning strings are deprecated and only supported in Windows")
                     target = checkres
                 if overwrite or (not os.path.exists(target)):
                     tmpres = RARProcessFile(self._handle, RAR_EXTRACT, None, target)
