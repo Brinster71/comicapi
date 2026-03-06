@@ -31,7 +31,7 @@ INDEX_HTML = """<!doctype html>
     .grid2 { display:grid; grid-template-columns: 220px 1fr; gap:.4rem .8rem; align-items:start; }
     .meta-card { border:1px solid #ddd; padding:.8rem; border-radius:.5rem; margin:.6rem 0; }
     .thumb { width:180px; height:260px; object-fit:contain; border:1px solid #ddd; background:#fafafa; }
-    .mapping-grid { display:grid; grid-template-columns: 22px 120px 1fr; gap:.35rem .5rem; align-items:center; margin:.4rem 0; }
+    .mapping-grid { display:grid; grid-template-columns: 22px 140px 1fr; gap:.35rem .5rem; align-items:center; margin:.4rem 0; }
     .small { font-size:.85rem; }
   </style>
 </head>
@@ -85,14 +85,17 @@ INDEX_HTML = """<!doctype html>
   </div>
 
   <details>
-    <summary>Raw detected metadata JSON</summary>
+    <summary>Raw detected metadata JSON (editable)</summary>
     <textarea id='metadataJson' placeholder='Read metadata first, then edit JSON fields...'></textarea>
+    <div class='row' style='margin-top:.5rem;'>
+      <button onclick='writeManualMetadata()'>Write this raw metadata JSON to selected file</button>
+    </div>
   </details>
 
   <h3>ComicVine issue candidates</h3>
   <div class='muted'>Click a row to prefill selectable mapping fields. Match hint compares your loaded metadata against candidate issue/series/year.</div>
   <table id='issueTable'>
-    <thead><tr><th>Match hint</th><th>Issue #</th><th>Series</th><th>Volume start</th><th>Cover date</th><th>Issue ID</th></tr></thead>
+    <thead><tr><th>Match hint</th><th>Issue #</th><th>Issue name</th><th>Series</th><th>Start year</th><th>Cover date</th><th>Issue ID</th></tr></thead>
     <tbody></tbody>
   </table>
 
@@ -107,10 +110,16 @@ INDEX_HTML = """<!doctype html>
     <div class='mapping-grid'>
       <input type='checkbox' id='use_series' checked><label for='use_series'>Series</label><input id='map_series' type='text'>
       <input type='checkbox' id='use_issue' checked><label for='use_issue'>Issue</label><input id='map_issue' type='text'>
-      <input type='checkbox' id='use_year' checked><label for='use_year'>Year</label><input id='map_year' type='text'>
-      <input type='checkbox' id='use_volume' checked><label for='use_volume'>Volume</label><input id='map_volume' type='text'>
       <input type='checkbox' id='use_title' checked><label for='use_title'>Title</label><input id='map_title' type='text'>
       <input type='checkbox' id='use_publisher' checked><label for='use_publisher'>Publisher</label><input id='map_publisher' type='text'>
+      <input type='checkbox' id='use_year' checked><label for='use_year'>Year (published)</label><input id='map_year' type='text'>
+      <input type='checkbox' id='use_volume' checked><label for='use_volume'>Volume</label><input id='map_volume' type='text'>
+      <input type='checkbox' id='use_start_year' checked><label for='use_start_year'>Start year</label><input id='map_start_year' type='text'>
+      <input type='checkbox' id='use_published_year' checked><label for='use_published_year'>Published year</label><input id='map_published_year' type='text'>
+      <input type='checkbox' id='use_issue_name' checked><label for='use_issue_name'>Issue name</label><input id='map_issue_name' type='text'>
+      <input type='checkbox' id='use_issue_id' checked><label for='use_issue_id'>ComicVine issue ID</label><input id='map_issue_id' type='text'>
+      <input type='checkbox' id='use_series_id' checked><label for='use_series_id'>ComicVine series ID</label><input id='map_series_id' type='text'>
+      <input type='checkbox' id='use_description' checked><label for='use_description'>Description</label><input id='map_description' type='text'>
     </div>
     <div class='row'>
       <button onclick='applySelectedComicVineFields()'>Apply selected ComicVine fields to metadata JSON</button>
@@ -137,13 +146,17 @@ INDEX_HTML = """<!doctype html>
       return (Number.isNaN(parseInt(m[1], 10)) ? m[1] : n) + (m[2] || '').toLowerCase();
     }
 
-    function parseLoadedMetadata() {
+    function parseLoadedMetadataWrapper() {
       try {
-        const raw = JSON.parse(document.getElementById('metadataJson').value || '{}');
-        return raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : raw;
+        return JSON.parse(document.getElementById('metadataJson').value || '{}');
       } catch (_) {
         return {};
       }
+    }
+
+    function parseLoadedMetadata() {
+      const raw = parseLoadedMetadataWrapper();
+      return raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : raw;
     }
 
     function renderSummary(summary) {
@@ -171,10 +184,11 @@ INDEX_HTML = """<!doctype html>
       const volume = issue.volume || {};
       const volumeName = String(volume.name || '').toLowerCase();
       const volumeYear = String(volume.start_year || '').trim();
+      const pubYear = String(issue.cover_date || '').slice(0,4);
 
       const issueMatch = mdIssue && issueNum && mdIssue === issueNum;
       const seriesMatch = mdSeries && volumeName && (mdSeries === volumeName || volumeName.includes(mdSeries));
-      const yearMatch = mdYear && volumeYear && mdYear === volumeYear;
+      const yearMatch = mdYear && pubYear && mdYear === pubYear;
       const volumeMatch = mdVolume && volumeYear && mdVolume === volumeYear;
 
       const score = [issueMatch, seriesMatch, yearMatch || volumeMatch].filter(Boolean).length;
@@ -185,15 +199,21 @@ INDEX_HTML = """<!doctype html>
 
     function fillMappingFromIssue(issue) {
       const volume = issue.volume || {};
-      const cover = String(issue.cover_date || '');
-      const year = cover.length >= 4 ? cover.slice(0,4) : '';
+      const coverDate = String(issue.cover_date || '');
+      const publishedYear = coverDate.length >= 4 ? coverDate.slice(0,4) : '';
       const pub = volume.publisher ? (volume.publisher.name || '') : '';
       document.getElementById('map_series').value = volume.name || '';
       document.getElementById('map_issue').value = issue.issue_number || '';
-      document.getElementById('map_year').value = year;
-      document.getElementById('map_volume').value = volume.start_year || '';
       document.getElementById('map_title').value = issue.name || '';
+      document.getElementById('map_issue_name').value = issue.name || '';
+      document.getElementById('map_year').value = publishedYear;
+      document.getElementById('map_published_year').value = publishedYear;
+      document.getElementById('map_start_year').value = volume.start_year || '';
+      document.getElementById('map_volume').value = '';
       document.getElementById('map_publisher').value = pub;
+      document.getElementById('map_issue_id').value = issue.id || '';
+      document.getElementById('map_series_id').value = volume.id || '';
+      document.getElementById('map_description').value = issue.description || issue.deck || '';
     }
 
     function renderComicVine(data) {
@@ -208,6 +228,7 @@ INDEX_HTML = """<!doctype html>
         tr.innerHTML =
           `<td><span class='pill ${hint.cls}'>${hint.label}</span></td>` +
           `<td>${i.issue_number || ''}</td>` +
+          `<td>${i.name || ''}</td>` +
           `<td>${volume.name || ''}</td>` +
           `<td>${volume.start_year || ''}</td>` +
           `<td>${i.cover_date || ''}</td>` +
@@ -227,7 +248,8 @@ INDEX_HTML = """<!doctype html>
           `<td>${s.id || ''}</td>`;
         tr.onclick = () => {
           document.getElementById('map_series').value = s.name || '';
-          document.getElementById('map_volume').value = s.start_year || '';
+          document.getElementById('map_start_year').value = s.start_year || '';
+          document.getElementById('map_series_id').value = s.id || '';
         };
         seriesBody.appendChild(tr);
       });
@@ -258,7 +280,7 @@ INDEX_HTML = """<!doctype html>
       if (data.style) document.getElementById('style').value = data.style;
       document.getElementById('styleInfo').textContent = data.detected_style ? `Detected: ${data.detected_style}` : 'Detected: none';
       renderSummary(data.summary || {});
-      const thumb = '/api/thumbnail?path=' + encodeURIComponent(path) + '&_=' + Date.now();
+      const thumb = '/api/thumbnail?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style) + '&_=' + Date.now();
       document.getElementById('coverThumb').src = thumb;
     }
 
@@ -274,10 +296,16 @@ INDEX_HTML = """<!doctype html>
       const fields = [
         ['series', 'use_series', 'map_series'],
         ['issue', 'use_issue', 'map_issue'],
-        ['year', 'use_year', 'map_year'],
-        ['volume', 'use_volume', 'map_volume'],
         ['title', 'use_title', 'map_title'],
         ['publisher', 'use_publisher', 'map_publisher'],
+        ['year', 'use_year', 'map_year'],
+        ['volume', 'use_volume', 'map_volume'],
+        ['startYear', 'use_start_year', 'map_start_year'],
+        ['publishedYear', 'use_published_year', 'map_published_year'],
+        ['issueName', 'use_issue_name', 'map_issue_name'],
+        ['comicVineIssueId', 'use_issue_id', 'map_issue_id'],
+        ['comicVineSeriesId', 'use_series_id', 'map_series_id'],
+        ['description', 'use_description', 'map_description'],
       ];
       fields.forEach(([k, c, i]) => {
         if (document.getElementById(c).checked) {
@@ -294,21 +322,31 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
-    async function writeMetadata() {
+    async function writeFromJsonPayload(payload) {
       const path = document.getElementById('comicPath').value.trim();
       const style = document.getElementById('style').value;
       if (!path) return alert('Select or enter a comic file path first.');
-      let obj;
-      try { obj = JSON.parse(document.getElementById('metadataJson').value || '{}'); }
-      catch (e) { return alert('Metadata JSON is invalid: ' + e); }
-
-      const patch = obj.metadata && typeof obj.metadata === 'object' ? obj.metadata : obj;
+      const patch = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : payload;
       const res = await fetch('/api/write', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ path, style, metadata: patch })
       });
       showJson('metadataJson', await res.json());
+    }
+
+    async function writeMetadata() {
+      let obj;
+      try { obj = JSON.parse(document.getElementById('metadataJson').value || '{}'); }
+      catch (e) { return alert('Metadata JSON is invalid: ' + e); }
+      await writeFromJsonPayload(obj);
+    }
+
+    async function writeManualMetadata() {
+      let obj;
+      try { obj = JSON.parse(document.getElementById('metadataJson').value || '{}'); }
+      catch (e) { return alert('Metadata JSON is invalid: ' + e); }
+      await writeFromJsonPayload(obj);
     }
 
     async function searchComicVine() {
@@ -370,8 +408,7 @@ def metadata_summary(md_dict, detected_style, used_style):
 
 def apply_metadata(md, patch):
     for k, v in patch.items():
-        if hasattr(md, k):
-            setattr(md, k, v)
+        setattr(md, k, v)
 
 
 def detect_style(ca):
@@ -421,7 +458,7 @@ def guess_content_type(blob):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ComicWebUI/0.4"
+    server_version = "ComicWebUI/0.5"
 
     def _comicvine_client(self, qs):
         user_key = qs.get("api_key", [""])[0].strip()
