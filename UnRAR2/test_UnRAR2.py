@@ -1,7 +1,12 @@
 import os, sys
+import shutil
+import pytest
 
-import UnRAR2
-from UnRAR2.rar_exceptions import *
+if shutil.which("unrar") is None and shutil.which("rar") is None:
+    pytest.skip("Skipping UnRAR2 integration tests: unrar/rar executable not installed", allow_module_level=True)
+
+UnRAR2 = sys.modules[__package__]
+from .rar_exceptions import *
 
 
 def cleanup(dir='test'):
@@ -51,7 +56,7 @@ archive.extract(lambda rarinfo: rarinfo.size <= 1024)
 for rarinfo in archive.infoiter():
     if rarinfo.size <= 1024 and not rarinfo.isdir:
         assert rarinfo.size == os.stat(rarinfo.filename).st_size
-assert file('test'+os.sep+'test.txt', 'rt').read() == 'This is only a test.'
+assert open('test'+os.sep+'test.txt', 'rt').read() == 'This is only a test.'
 assert not os.path.exists('test'+os.sep+'this.py')
 cleanup()
 
