@@ -460,6 +460,7 @@ class RarArchiver:
         #return namelist
 
         tries = 0
+        last_error = None
         while tries < 7:
             try:
                 tries = tries+1
@@ -470,6 +471,7 @@ class RarArchiver:
                         namelist.append( item.filename )
 
             except (OSError, IOError) as e:
+                last_error = e
                 print("getArchiveFilenameList(): [{0}] {1} attempt#{2}".format(str(e), self.path, tries), file=sys.stderr)
                 time.sleep(1)
 
@@ -477,11 +479,14 @@ class RarArchiver:
                 #Success"
                 return namelist
 
-        raise e
+        if last_error is not None:
+            raise last_error
+        raise IOError("Unable to get archive filename list: {0}".format(self.path))
 
 
     def getRARObj( self ):
         tries = 0
+        last_error = None
         while tries < 7:
             try:
                 tries = tries+1
@@ -489,6 +494,7 @@ class RarArchiver:
                 rarc = OpenableRarFile(self.path)
 
             except (OSError, IOError) as e:
+                last_error = e
                 print("getRARObj(): [{0}] {1} attempt#{2}".format(str(e), self.path, tries), file=sys.stderr)
                 time.sleep(1)
 
@@ -496,7 +502,9 @@ class RarArchiver:
                 #Success"
                 return rarc
 
-        raise e
+        if last_error is not None:
+            raise last_error
+        raise IOError("Unable to open RAR object: {0}".format(self.path))
 
 #------------------------------------------
 # Folder implementation
