@@ -673,6 +673,21 @@ INDEX_HTML = """<!doctype html>
       setStatus('Assessment complete. Review recommended metadata, then write.', false);
     }
 
+    async function assessFile() {
+      const path = document.getElementById('comicPath').value.trim();
+      const style = document.getElementById('style').value;
+      if (!path) return alert('Select or enter a comic file path first.');
+      const res = await fetch('/api/assess?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style));
+      const data = await res.json();
+      showJson('assessmentJson', data);
+      if (data.summary) renderSummary(data.summary);
+      if (data.recommended_metadata) showJson('metadataJson', { metadata: data.recommended_metadata });
+      if (data.style) document.getElementById('style').value = data.style;
+      document.getElementById('styleInfo').textContent = data.detected_style ? `Detected: ${data.detected_style}` : 'Detected: none';
+      const thumb = '/api/thumbnail?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style) + '&_=' + Date.now();
+      document.getElementById('coverThumb').src = thumb;
+    }
+
     function escapeRegexLiteral(text) {
       const bs = String.fromCharCode(92);
       const specials = new Set([bs, '^', '$', '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|']);
