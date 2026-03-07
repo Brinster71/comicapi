@@ -13,7 +13,7 @@ python -m comicapi.webui.server
 
 Then open `http://127.0.0.1:8080`.
 
-In the UI you can now use **Browse…** buttons for library and comic selection (browser-relative), then paste/adjust absolute server paths as needed.
+In the UI, **Library Browse…** now helps choose/enter a folder path without uploading folder contents. Scanning still uses the server-side path you provide in `Library path`.
 
 ## ComicVine
 

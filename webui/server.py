@@ -47,7 +47,6 @@ INDEX_HTML = """<!doctype html>
     <label>Library path:</label>
     <input id='rootPath' type='text' placeholder='/path/to/comics'>
     <button onclick='browseLibraryPath()'>Browse…</button>
-    <input id='rootPathPicker' type='file' webkitdirectory directory multiple style='display:none' onchange='onRootPathPicked(event)'>
     <button onclick='scanLibrary()'>Scan</button>
   </div>
 
@@ -583,21 +582,29 @@ INDEX_HTML = """<!doctype html>
       el.style.color = isError ? '#9b1c1c' : '#145a2a';
     }
 
-    function browseLibraryPath() {
-      document.getElementById('rootPathPicker').click();
-    }
+    async function browseLibraryPath() {
+      const input = document.getElementById('rootPath');
+      const current = (input.value || '').trim();
 
-    function onRootPathPicked(evt) {
-      const files = (evt && evt.target && evt.target.files) ? Array.from(evt.target.files) : [];
-      if (!files.length) return;
-      const first = files[0];
-      const rel = first.webkitRelativePath || '';
-      const root = rel ? rel.split('/')[0] : '';
-      if (!root) return;
-      const current = (document.getElementById('rootPath').value || '').trim();
-      if (!current || current === '.') document.getElementById('rootPath').value = root;
+      if (window.showDirectoryPicker) {
+        try {
+          const handle = await window.showDirectoryPicker();
+          if (handle && handle.name) {
+            if (!current || current === '.') input.value = handle.name;
+            setStatus('Folder picked in browser for convenience. Enter absolute server path before scanning if needed.', false);
+            savePersistentFields();
+            return;
+          }
+        } catch (_) {
+          // user cancelled or browser blocked picker; fall back to prompt
+        }
+      }
+
+      const entered = window.prompt('Enter folder path to scan on the server:', current || '');
+      if (entered == null) return;
+      input.value = String(entered).trim();
       savePersistentFields();
-      setStatus('Directory selected in browser. If server path differs, paste absolute path manually.', false);
+      setStatus('Library path set. Click Scan to scan this folder.', false);
     }
 
     function browseComicFile() {
@@ -671,21 +678,6 @@ INDEX_HTML = """<!doctype html>
       const thumb = '/api/thumbnail?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style) + '&_=' + Date.now();
       document.getElementById('coverThumb').src = thumb;
       setStatus('Assessment complete. Review recommended metadata, then write.', false);
-    }
-
-    async function assessFile() {
-      const path = document.getElementById('comicPath').value.trim();
-      const style = document.getElementById('style').value;
-      if (!path) return alert('Select or enter a comic file path first.');
-      const res = await fetch('/api/assess?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style));
-      const data = await res.json();
-      showJson('assessmentJson', data);
-      if (data.summary) renderSummary(data.summary);
-      if (data.recommended_metadata) showJson('metadataJson', { metadata: data.recommended_metadata });
-      if (data.style) document.getElementById('style').value = data.style;
-      document.getElementById('styleInfo').textContent = data.detected_style ? `Detected: ${data.detected_style}` : 'Detected: none';
-      const thumb = '/api/thumbnail?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style) + '&_=' + Date.now();
-      document.getElementById('coverThumb').src = thumb;
     }
 
     function escapeRegexLiteral(text) {
