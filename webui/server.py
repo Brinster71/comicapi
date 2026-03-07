@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from collections import Counter
 from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -37,10 +38,12 @@ INDEX_HTML = """<!doctype html>
     .small { font-size:.85rem; }
     .tight { min-width: 8rem !important; }
     .status { margin-top:.4rem; font-size:.9rem; color:#145a2a; }
+    .diag { border:1px solid #e5d7a7; background:#fff7df; padding:.45rem .6rem; border-radius:.25rem; font-size:.8rem; margin-bottom:.6rem; }
   </style>
 </head>
 <body>
   <h2>Comic Metadata UI</h2>
+  <div id='diagBanner' class='diag'>Loading runtime diagnostics…</div>
   <p class='muted'>Single-comic workflow: scan, inspect detected metadata, choose series then issue, map fields, apply, write.</p>
 
   <div class='row'>
@@ -57,6 +60,8 @@ INDEX_HTML = """<!doctype html>
     <input id='comicPathPicker' type='file' accept='.cbz,.cbr,.cbt,.pdf,.zip,.rar' style='display:none' onchange='onComicFilePicked(event)'>
     <label>Write to:</label>
     <input id='writePath' type='text' placeholder='/path/to/output.cbz (defaults to selected file)'>
+    <button onclick='browseWritePath()'>Browse…</button>
+    <input id='writePathPicker' type='file' accept='.cbz,.cbr,.cbt,.pdf,.zip,.rar,.json' style='display:none' onchange='onWriteFilePicked(event)'>
     <button onclick='setWritePathFromSelected()'>Use selected file</button>
     <label>Style:</label>
     <select id='style' class='tight'>
@@ -636,6 +641,20 @@ INDEX_HTML = """<!doctype html>
       setStatus('File selected in browser. If server path differs, paste absolute path manually.', false);
     }
 
+    function browseWritePath() {
+      document.getElementById('writePathPicker').click();
+    }
+
+    function onWriteFilePicked(evt) {
+      const files = (evt && evt.target && evt.target.files) ? Array.from(evt.target.files) : [];
+      if (!files.length) return;
+      const f = files[0];
+      const rel = f.webkitRelativePath || f.name || '';
+      document.getElementById('writePath').value = rel;
+      savePersistentFields();
+      setStatus('Write target selected in browser. If server path differs, paste absolute path manually.', false);
+    }
+
     function setWritePathFromSelected() {
       const path = (document.getElementById('comicPath').value || '').trim();
       if (!path) return alert('Select a comic file first.');
@@ -791,15 +810,19 @@ INDEX_HTML = """<!doctype html>
       if (!path) return alert('Select or enter a comic file path first.');
       const patch = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : payload;
       setStatus('Writing metadata to file…', false);
-      const res = await fetch('/api/write', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ path, write_path: writePath, style, metadata: patch })
-      });
-      const out = await res.json();
-      showJson('metadataJson', out);
-      if (res.ok && out.ok) setStatus('Metadata written to: ' + (out.written_path || out.path || ''), false);
-      else setStatus('Write failed: ' + (out.error || 'unknown error'), true);
+      try {
+        const res = await fetch('/api/write', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ path, write_path: writePath, style, metadata: patch })
+        });
+        const out = await res.json();
+        showJson('metadataJson', out);
+        if (res.ok && out.ok) setStatus('Metadata written to: ' + (out.written_path || out.path || ''), false);
+        else setStatus('Write failed: ' + (out.error || 'unknown error'), true);
+      } catch (err) {
+        setStatus('Write failed: ' + (err && err.message ? err.message : 'request failed'), true);
+      }
     }
 
     async function writeMetadata() {
@@ -815,6 +838,19 @@ INDEX_HTML = """<!doctype html>
       try { obj = JSON.parse(document.getElementById('metadataJson').value || '{}'); }
       catch (e) { return alert('Metadata JSON is invalid: ' + e); }
       await writeFromJsonPayload(obj);
+    }
+
+    async function loadRuntimeDiagnostics() {
+      const el = document.getElementById('diagBanner');
+      if (!el) return;
+      try {
+        const res = await fetch('/api/version');
+        const data = await res.json();
+        const features = (data.features || []).join(', ') || 'none';
+        el.textContent = `Running ${data.server_version || 'ComicWebUI'} build ${data.git_commit || 'unknown'} from ${data.module_path || ''}; features: ${features}.`;
+      } catch (_) {
+        el.textContent = 'Runtime diagnostics unavailable. Confirm server process/check-out if UI looks stale.';
+      }
     }
 
     async function searchComicVine() {
@@ -835,6 +871,7 @@ INDEX_HTML = """<!doctype html>
     }
 
     loadPersistentFields();
+    loadRuntimeDiagnostics();
   </script>
 </body>
 </html>"""
@@ -956,6 +993,7 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(payload, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -980,10 +1018,35 @@ class Handler(BaseHTTPRequestHandler):
             body = INDEX_HTML.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
             return
+
+        if parsed.path == "/api/version":
+            module_path = str(Path(__file__).resolve())
+            git_commit = "unknown"
+            try:
+                proc = subprocess.run(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    cwd=str(Path(__file__).resolve().parents[1]),
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    timeout=1,
+                    check=False,
+                )
+                if proc.returncode == 0:
+                    git_commit = proc.stdout.strip() or "unknown"
+            except Exception:
+                pass
+            return self._json(200, {
+                "server_version": self.server_version,
+                "git_commit": git_commit,
+                "module_path": module_path,
+                "features": ["assess", "browse_paths", "write_status", "version_endpoint"],
+            })
 
         if parsed.path == "/api/scan":
             root = qs.get("root", [""])[0]
