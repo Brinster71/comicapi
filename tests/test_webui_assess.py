@@ -32,8 +32,12 @@ def test_build_assessment_prefers_filename_when_current_missing():
 def test_index_html_has_library_picker_field_update_and_write_error_status():
     html = server.INDEX_HTML
     assert "function combinePickedFolderWithCurrentPath" in html
-    assert "input.value = combinePickedFolderWithCurrentPath(current, handle.name);" in html
-    assert "setStatus('Folder selected: ' + input.value" in html
+    assert "current.replace(/\\\\/g, '/')" in html
+    assert "if (base && base.toLowerCase() === picked.toLowerCase()) return normalized;" in html
+    assert "clearScanResults();" in html
+    assert "fetch('/api/pick_directory?current=' + encodeURIComponent(previous || ''))" in html
+    assert "Folder picker unavailable:" in html
+    assert "setStatus('Folder selected: ' + input.value + '. Click Scan.'" in html
     assert "try {" in html and "setStatus('Write failed: ' + (err && err.message ? err.message : 'request failed'), true);" in html
 
 
@@ -45,3 +49,9 @@ def test_index_html_has_diagnostics_and_write_browse_hooks():
     assert "fetch('/api/version')" in html
     assert "function browseWritePath()" in html
     assert "function onWriteFilePicked(evt)" in html
+    assert "setStatus('Scanning library…', false);" in html
+    assert "setStatus('Scan failed: ' + (data.error || ('HTTP ' + res.status)), true);" in html
+    assert "function buildComicVineQueryFromAssessment(data)" in html
+    assert "const parts = [series, issue, title].filter(Boolean);" in html
+    assert "const autoQuery = buildComicVineQueryFromAssessment(data);" in html
+    assert "cvQuery.value = autoQuery;" in html

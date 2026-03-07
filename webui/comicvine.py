@@ -44,11 +44,35 @@ class ComicVineClient:
         data = self._get(f"/volume/4050-{vid}/")
         return data.get("results", {})
 
+    @staticmethod
+    def _normalize_volume_id(volume_id):
+        text = str(volume_id or "").strip()
+        if not text:
+            return ""
+        if "-" in text:
+            text = text.split("-", 1)[1]
+        text = text.lstrip("0")
+        return text or "0"
+
+    @classmethod
+    def _issue_matches_volume(cls, issue_obj, volume_id):
+        vol = (issue_obj or {}).get("volume") or {}
+        issue_vid = cls._normalize_volume_id(vol.get("id"))
+        wanted_vid = cls._normalize_volume_id(volume_id)
+        return bool(issue_vid and wanted_vid and issue_vid == wanted_vid)
+
 
     def volume_issues(self, volume_id, limit=100):
-        # ComicVine volume IDs are typically 4050-<id>; accept either raw numeric or prefixed.
-        vid = str(volume_id)
-        if vid.startswith("4050-"):
-            vid = vid.split("-", 1)[1]
-        data = self._get("/issues/", filter=f"volume:{vid}", sort="issue_number:asc", limit=limit)
-        return data.get("results", [])
+        # ComicVine volume IDs are 4050-<id>. Query using canonical prefix and
+        # still enforce strict post-filtering by returned issue.volume.id.
+        vid = self._normalize_volume_id(volume_id)
+        data = self._get("/issues/", filter=f"volume:4050-{vid}", sort="issue_number:asc", limit=limit)
+        issues = data.get("results", [])
+        strict = [i for i in issues if self._issue_matches_volume(i, vid)]
+        if strict:
+            return strict
+
+        # Fallback for API variance; still return only strict matches.
+        data_alt = self._get("/issues/", filter=f"volume:{vid}", sort="issue_number:asc", limit=limit)
+        issues_alt = data_alt.get("results", [])
+        return [i for i in issues_alt if self._issue_matches_volume(i, vid)]

@@ -19,26 +19,169 @@ INDEX_HTML = """<!doctype html>
   <meta name='viewport' content='width=device-width, initial-scale=1'>
   <title>Comic Metadata UI</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 1rem; }
-    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: .5rem; }
-    input, select, button, textarea { padding: .4rem; }
+    :root{
+      --bg1:#fff8db; --bg2:#fff1a8; --bg3:#ffe082; --ink:#4a2b00;
+      --muted:rgba(74,43,0,.68); --line:rgba(74,43,0,.10);
+      --card:rgba(255,255,255,.42); --card-strong:rgba(255,255,255,.62);
+      --shadow:0 20px 48px rgba(117,74,0,.10);
+      --radius-xl:1.35rem; --radius-pill:999px; --max:1380px;
+    }
+    *{ box-sizing:border-box; }
+    html, body{ height:100%; }
+    body {
+      margin: 0;
+      padding: 1rem;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(250,204,21,.35), transparent 26%),
+        radial-gradient(circle at bottom right, rgba(251,191,36,.28), transparent 30%),
+        radial-gradient(circle at 80% 20%, rgba(253,224,71,.22), transparent 22%),
+        linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 52%, var(--bg3) 100%);
+      overflow-x: hidden;
+    }
+    body > * {
+      max-width: var(--max);
+      margin-left: auto;
+      margin-right: auto;
+    }
+    h2 {
+      margin: .25rem auto .55rem;
+      padding: .85rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-pill);
+      background: rgba(255,255,255,.45);
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+      font-size: 1.25rem;
+    }
+    h3 {
+      margin: 1.15rem auto .4rem;
+      font-size: 1.2rem;
+      letter-spacing: -.01em;
+    }
+    .row {
+      display: flex;
+      gap: .5rem;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: .6rem;
+      padding: .55rem .65rem;
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      background: var(--card);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 28px rgba(117,74,0,.06);
+    }
+    .muted { color: var(--muted); font-size: .92rem; }
+    input, select, button, textarea {
+      font: inherit;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: .85rem;
+      background: rgba(255,255,255,.72);
+      padding: .45rem .6rem;
+      transition: border-color .18s ease, background-color .18s ease, transform .12s ease;
+    }
+    input:focus, select:focus, button:focus, textarea:focus {
+      outline: none;
+      border-color: rgba(234,179,8,.6);
+      background: #fff;
+    }
+    button {
+      background: #4a2b00;
+      color: #fff4b5;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { transform: translateY(-1px); opacity: .95; }
+    label { color: rgba(74,43,0,.86); }
     input[type=text] { min-width: 18rem; }
-    textarea { width: 100%; min-height: 10rem; font-family: ui-monospace, monospace; }
-    table { border-collapse: collapse; width: 100%; margin-top: .5rem; }
-    th, td { border: 1px solid #ddd; padding: .35rem; text-align: left; }
-    tr:hover { background: #f6f6f6; }
-    .muted { color: #666; font-size: .9rem; }
-    .pill { border-radius: 999px; padding: .1rem .5rem; font-size: .8rem; }
+    textarea {
+      width: 100%;
+      min-height: 10rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: var(--card-strong);
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: .5rem;
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      overflow: hidden;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    th, td {
+      border: 1px solid rgba(74,43,0,.10);
+      padding: .4rem;
+      text-align: left;
+    }
+    th { background: rgba(255,251,235,.72); }
+    tr:hover { background: rgba(255,255,255,.5); }
+    .pill { border-radius: var(--radius-pill); padding: .1rem .5rem; font-size: .8rem; }
     .good { background: #d7f6dd; color: #145a2a; }
     .warn { background: #fff3cd; color: #7a5b00; }
     .grid2 { display:grid; grid-template-columns: 220px 1fr; gap:.4rem .8rem; align-items:start; }
-    .meta-card { border:1px solid #ddd; padding:.8rem; border-radius:.5rem; margin:.6rem 0; }
-    .thumb { width:180px; height:260px; object-fit:contain; border:1px solid #ddd; background:#fafafa; }
+    .meta-card {
+      border:1px solid var(--line);
+      padding:.8rem;
+      border-radius:var(--radius-xl);
+      margin:.65rem 0;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+    .thumb {
+      width:180px;
+      height:260px;
+      object-fit:contain;
+      border:1px solid var(--line);
+      border-radius: .75rem;
+      background: rgba(255,255,255,.8);
+    }
     .mapping-grid { display:grid; grid-template-columns: 22px 160px 1fr; gap:.35rem .5rem; align-items:center; margin:.35rem 0; }
     .small { font-size:.85rem; }
     .tight { min-width: 8rem !important; }
-    .status { margin-top:.4rem; font-size:.9rem; color:#145a2a; }
-    .diag { border:1px solid #e5d7a7; background:#fff7df; padding:.45rem .6rem; border-radius:.25rem; font-size:.8rem; margin-bottom:.6rem; }
+    .status {
+      margin-top:.45rem;
+      font-size:.95rem;
+      color:#145a2a;
+      padding: .35rem .55rem;
+      border-radius: .6rem;
+      background: rgba(255,255,255,.52);
+      border: 1px solid var(--line);
+    }
+    .diag {
+      border:1px solid rgba(120,70,0,.14);
+      background:rgba(255,247,223,.84);
+      padding:.5rem .65rem;
+      border-radius:.75rem;
+      font-size:.83rem;
+      margin-bottom:.65rem;
+      box-shadow: 0 10px 26px rgba(117,74,0,.06);
+    }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      background: rgba(255,255,255,.45);
+      padding: .5rem .7rem;
+      margin: .55rem 0;
+      box-shadow: 0 10px 24px rgba(117,74,0,.05);
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: rgba(74,43,0,.88);
+      margin-bottom: .4rem;
+    }
+    @media (max-width: 900px){
+      .grid2 { grid-template-columns: 1fr; }
+      .mapping-grid { grid-template-columns: 22px 130px 1fr; }
+      input[type=text] { min-width: 14rem; }
+    }
   </style>
 </head>
 <body>
@@ -214,7 +357,29 @@ INDEX_HTML = """<!doctype html>
   <script>
     function showJson(id, obj) { document.getElementById(id).value = JSON.stringify(obj, null, 2); }
 
-    const appState = { cvData: null, seriesIssues: [], lastIssue: null, lastSeries: null, volumeDetails: null };
+    const appState = { cvData: null, seriesIssues: [], lastIssue: null, lastSeries: null, volumeDetails: null, writePathManual: false };
+
+    function refreshWritePathManualFlag() {
+      const comic = (document.getElementById('comicPath').value || '').trim();
+      const write = (document.getElementById('writePath').value || '').trim();
+      appState.writePathManual = Boolean(write) && write !== comic;
+    }
+
+    function maybeSyncWritePath(force=false) {
+      const comic = (document.getElementById('comicPath').value || '').trim();
+      const writeEl = document.getElementById('writePath');
+      const write = (writeEl.value || '').trim();
+      if (force || !appState.writePathManual || !write) {
+        writeEl.value = comic;
+        appState.writePathManual = false;
+      }
+    }
+
+    function setComicPathValue(path) {
+      document.getElementById('comicPath').value = path || '';
+      maybeSyncWritePath(false);
+      savePersistentFields();
+    }
 
     function savePersistentFields() {
       localStorage.setItem('comicapi.rootPath', document.getElementById('rootPath').value || '');
@@ -231,7 +396,16 @@ INDEX_HTML = """<!doctype html>
       document.getElementById('writePath').value = localStorage.getItem('comicapi.writePath') || '';
       document.getElementById('pathPattern').value = localStorage.getItem('comicapi.pathPattern') || '{Series}/{VolumeNumber} - {Year}/{IssueNumber} - {Title}';
       if (!document.getElementById('writePath').value) document.getElementById('writePath').value = document.getElementById('comicPath').value;
+      refreshWritePathManualFlag();
       ['rootPath','apiKey','comicPath','writePath','pathPattern'].forEach(id => document.getElementById(id).addEventListener('change', savePersistentFields));
+      document.getElementById('comicPath').addEventListener('input', () => {
+        maybeSyncWritePath(false);
+        savePersistentFields();
+      });
+      document.getElementById('writePath').addEventListener('input', () => {
+        refreshWritePathManualFlag();
+        savePersistentFields();
+      });
     }
 
     function togglePin(which) {
@@ -249,6 +423,20 @@ INDEX_HTML = """<!doctype html>
       return (Number.isNaN(parseInt(m[1], 10)) ? m[1] : n) + (m[2] || '').toLowerCase();
     }
 
+    function normalizeSeriesId(val) {
+      const s = String(val || '').trim();
+      if (!s) return '';
+      const parts = s.split('-').filter(Boolean);
+      const tail = parts.length ? parts[parts.length - 1] : s;
+      return tail.replace(/^0+/, '') || '0';
+    }
+
+    function sameSeriesId(a, b) {
+      const x = normalizeSeriesId(a);
+      const y = normalizeSeriesId(b);
+      return Boolean(x && y && x === y);
+    }
+
     function parseLoadedMetadataWrapper() {
       try { return JSON.parse(document.getElementById('metadataJson').value || '{}'); }
       catch (_) { return {}; }
@@ -263,7 +451,7 @@ INDEX_HTML = """<!doctype html>
       const md = parseLoadedMetadata();
       if (md.issue) return normalizeIssue(md.issue);
       const path = (document.getElementById('comicPath').value || '').split('/').pop() || '';
-      const m = path.match(/(?:^|[^\d])(\d{1,4})(?:[^\d]|$)/);
+      const m = path.match(/(?:^|[^\\d])(\\d{1,4})(?:[^\\d]|$)/);
       if (m) return normalizeIssue(m[1]);
       return '';
     }
@@ -300,7 +488,7 @@ INDEX_HTML = """<!doctype html>
 
     function extractVolumeGuess(issue, series) {
       const cands = [issue?.name, issue?.title, series?.name, issue?.deck, series?.deck, issue?.description, series?.description].filter(Boolean).join(' ');
-      const m = cands.match(/(?:volume|vol\.?|v\.)\s*(\d+)/i);
+      const m = cands.match(/(?:volume|vol\\.?|v\\.)\\s*(\\d+)/i);
       if (m) return m[1];
       return '';
     }
@@ -473,12 +661,21 @@ INDEX_HTML = """<!doctype html>
         tr.onclick = () => { seriesSel.value = String(s.id || ''); onSeriesSelected(); };
         seriesBody.appendChild(tr);
       });
+    }
 
+    function renderIssueReferenceTable(issues, md) {
       const issueBody = document.querySelector('#issueTable tbody');
       issueBody.innerHTML = '';
-      issues.forEach(i => {
+      const rows = (issues || []);
+      if (!rows.length) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td colspan='7'><span class='muted'>No issues found for selected series.</span></td>`;
+        issueBody.appendChild(tr);
+        return;
+      }
+      rows.forEach(i => {
         const volume = i.volume || {};
-        const hint = looksLikeMatch(md, i);
+        const hint = looksLikeMatch(md || {}, i);
         const tr = document.createElement('tr');
         tr.innerHTML = `<td><span class='pill ${hint.cls}'>${hint.label}</span></td><td>${i.issue_number || ''}</td><td>${i.name || i.title || ''}</td><td>${volume.name || ''}</td><td>${volume.start_year || ''}</td><td>${i.cover_date || ''}</td><td>${i.id || ''}</td>`;
         tr.onclick = () => { selectSeriesByIssue(i); };
@@ -491,7 +688,7 @@ INDEX_HTML = """<!doctype html>
       const seriesSel = document.getElementById('seriesSelect');
       if (sid) {
         for (const opt of seriesSel.options) {
-          if (opt.value === sid) { seriesSel.value = sid; break; }
+          if (sameSeriesId(opt.value, sid)) { seriesSel.value = opt.value; break; }
         }
       }
       await onSeriesSelected(issue);
@@ -501,7 +698,7 @@ INDEX_HTML = """<!doctype html>
       const seriesSel = document.getElementById('seriesSelect');
       const sid = seriesSel.value;
       const data = appState.cvData || {series:[], issues:[]};
-      const series = (data.series || []).find(s => String(s.id || '') === sid) || null;
+      const series = (data.series || []).find(s => sameSeriesId(s.id, sid)) || null;
       appState.lastSeries = series;
       appState.volumeDetails = null;
       if (series) {
@@ -531,10 +728,15 @@ INDEX_HTML = """<!doctype html>
         issues = payload.issues || [];
       } catch (_) {}
       if (!issues.length) {
-        issues = (data.issues || []).filter(i => String((i.volume || {}).id || '') === sid);
+        issues = (data.issues || []).filter(i => sameSeriesId((i.volume || {}).id, sid));
       }
-      if (!issues.length) issues = (data.issues || []).slice();
       appState.seriesIssues = issues;
+
+      if (!issues.length) {
+        document.getElementById('issueHint').textContent = 'No issues found for selected series. Try Search ComicVine again with a more specific query.';
+        renderIssueReferenceTable([], parseLoadedMetadata());
+        return;
+      }
 
       const md = parseLoadedMetadata();
       const preferredIssueNum = getPreferredIssueNumber();
@@ -553,6 +755,8 @@ INDEX_HTML = """<!doctype html>
         else if (!preferredIssue && idx === 0) opt.selected = true;
         issueSel.appendChild(opt);
       });
+
+      renderIssueReferenceTable(issues, md);
 
       // publisher majority chooser
       const pubs = issues.map(i => ((i.volume||{}).publisher||{}).name).filter(Boolean);
@@ -580,8 +784,7 @@ INDEX_HTML = """<!doctype html>
     function onIssueSelected() {
       const issueSel = document.getElementById('issueSelect');
       const iid = issueSel.value;
-      const fallbackIssues = (appState.cvData && appState.cvData.issues) ? appState.cvData.issues : [];
-      const issue = (appState.seriesIssues || []).find(i => String(i.id || '') === iid) || fallbackIssues.find(i => String(i.id || '') === iid);
+      const issue = (appState.seriesIssues || []).find(i => String(i.id || '') === iid);
       if (issue) {
         fillMappingFromIssue(issue);
         document.getElementById('issueHint').textContent = 'Best-guess issue preselected; adjust if needed.';
@@ -605,39 +808,54 @@ INDEX_HTML = """<!doctype html>
       const current = String(currentPath || '').trim();
       const picked = String(pickedFolderName || '').trim();
       if (!picked) return current;
-      if (!current) return picked;
-      const normalized = current.replace(/\\/g, '/').replace(/\/+$/, '');
-      if (!normalized) return picked;
-      const idx = normalized.lastIndexOf('/');
-      if (idx < 0) return picked;
-      const parent = normalized.slice(0, idx);
-      if (!parent) return '/' + picked;
-      return parent + '/' + picked;
+      if (!current) return '';
+      const normalized = current.replace(/\\\\/g, '/').replace(/\\/+$/, '');
+      if (!normalized || !normalized.startsWith('/')) return '';
+      const parts = normalized.split('/').filter(Boolean);
+      const base = parts.length ? parts[parts.length - 1] : '';
+      if (base && base.toLowerCase() === picked.toLowerCase()) return normalized;
+      return normalized + '/' + picked;
+    }
+
+    function clearScanResults() {
+      const tbody = document.querySelector('#scanTable tbody');
+      if (tbody) tbody.innerHTML = '';
     }
 
     async function browseLibraryPath() {
       const input = document.getElementById('rootPath');
-      const current = (input.value || '').trim();
+      const previous = (input.value || '').trim();
+      clearScanResults();
+      setStatus('Opening folder picker…', false);
 
-      if (window.showDirectoryPicker) {
-        try {
-          const handle = await window.showDirectoryPicker();
-          if (handle && handle.name) {
-            input.value = combinePickedFolderWithCurrentPath(current, handle.name);
-            savePersistentFields();
-            setStatus('Folder selected: ' + input.value + '. Confirm it matches the server path, then Scan.', false);
-            return;
-          }
-        } catch (_) {
-          // user cancelled or browser blocked picker; fall back to prompt
+      try {
+        const res = await fetch('/api/pick_directory?current=' + encodeURIComponent(previous || ''));
+        const data = await res.json();
+        if (res.ok && data.path) {
+          input.value = String(data.path || '').trim();
+          savePersistentFields();
+          setStatus('Folder selected: ' + input.value + '. Click Scan.', false);
+          return;
         }
+        if (data && data.error) {
+          setStatus('Folder picker unavailable: ' + data.error + '. Enter absolute path manually.', true);
+        }
+      } catch (_) {}
+
+      const entered = window.prompt('Enter absolute folder path to scan on the server:', previous || '/home/travis/comics');
+      if (entered != null) {
+        let value = String(entered).trim();
+        if (value && !value.startsWith('/') && previous.startsWith('/')) {
+          const guessed = combinePickedFolderWithCurrentPath(previous, value);
+          if (guessed) value = guessed;
+        }
+        input.value = value;
+        savePersistentFields();
+        setStatus('Library path set. Click Scan to scan this folder.', false);
+        return;
       }
 
-      const entered = window.prompt('Enter folder path to scan on the server:', current || '');
-      if (entered == null) return;
-      input.value = String(entered).trim();
-      savePersistentFields();
-      setStatus('Library path set. Click Scan to scan this folder.', false);
+      setStatus('Folder selection cancelled.', true);
     }
 
     function browseComicFile() {
@@ -649,9 +867,7 @@ INDEX_HTML = """<!doctype html>
       if (!files.length) return;
       const f = files[0];
       const rel = f.webkitRelativePath || f.name || '';
-      document.getElementById('comicPath').value = rel;
-      if (!document.getElementById('writePath').value) document.getElementById('writePath').value = rel;
-      savePersistentFields();
+      setComicPathValue(rel);
       setStatus('File selected: ' + rel + '. Note: enter absolute server path manually if different.', false);
     }
 
@@ -665,6 +881,7 @@ INDEX_HTML = """<!doctype html>
       const f = files[0];
       const rel = f.webkitRelativePath || f.name || '';
       document.getElementById('writePath').value = rel;
+      appState.writePathManual = true;
       savePersistentFields();
       setStatus('Write target: ' + rel + '. Enter absolute server path if server differs from browser.', false);
     }
@@ -673,6 +890,7 @@ INDEX_HTML = """<!doctype html>
       const path = (document.getElementById('comicPath').value || '').trim();
       if (!path) return alert('Select a comic file first.');
       document.getElementById('writePath').value = path;
+      appState.writePathManual = false;
       savePersistentFields();
       setStatus('Write target set to selected file.', false);
     }
@@ -680,16 +898,27 @@ INDEX_HTML = """<!doctype html>
     async function scanLibrary() {
       const root = document.getElementById('rootPath').value.trim();
       if (!root) return alert('Enter a library path first.');
-      const res = await fetch('/api/scan?root=' + encodeURIComponent(root));
-      const data = await res.json();
-      const tbody = document.querySelector('#scanTable tbody');
-      tbody.innerHTML = '';
-      (data.results || []).forEach(r => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${r.path || ''}</td><td>${r.pages ?? ''}</td><td>${r.has_cix ?? ''}</td><td>${r.has_cbi ?? ''}</td><td>${r.has_comet ?? ''}</td><td>${r.error || ''}</td>`;
-        tr.onclick = () => { if (r.path) { document.getElementById('comicPath').value = r.path; if (!document.getElementById('writePath').value) document.getElementById('writePath').value = r.path; savePersistentFields(); } };
-        tbody.appendChild(tr);
-      });
+      setStatus('Scanning library…', false);
+      try {
+        const res = await fetch('/api/scan?root=' + encodeURIComponent(root));
+        const data = await res.json();
+        const tbody = document.querySelector('#scanTable tbody');
+        tbody.innerHTML = '';
+        if (!res.ok || data.error) {
+          setStatus('Scan failed: ' + (data.error || ('HTTP ' + res.status)), true);
+          return;
+        }
+        (data.results || []).forEach(r => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${r.path || ''}</td><td>${r.pages ?? ''}</td><td>${r.has_cix ?? ''}</td><td>${r.has_cbi ?? ''}</td><td>${r.has_comet ?? ''}</td><td>${r.error || ''}</td>`;
+          tr.onclick = () => { if (r.path) { setComicPathValue(r.path); } };
+          tbody.appendChild(tr);
+        });
+        const note = data.note ? (' ' + data.note) : '';
+        setStatus('Scan complete. ' + (data.count || 0) + ' comic file(s) found.' + note, false);
+      } catch (err) {
+        setStatus('Scan failed: ' + (err && err.message ? err.message : 'request failed'), true);
+      }
     }
 
     async function readMetadata() {
@@ -701,13 +930,23 @@ INDEX_HTML = """<!doctype html>
       const data = await res.json();
       showJson('metadataJson', data);
       if (data.style) document.getElementById('style').value = data.style;
-      if (!document.getElementById('writePath').value) document.getElementById('writePath').value = path;
+      maybeSyncWritePath(false);
       savePersistentFields();
       document.getElementById('styleInfo').textContent = data.detected_style ? `Detected: ${data.detected_style}` : 'Detected: none';
       renderSummary(data.summary || {});
       const thumb = '/api/thumbnail?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style) + '&_=' + Date.now();
       document.getElementById('coverThumb').src = thumb;
       setStatus('Metadata loaded.', false);
+    }
+
+    function buildComicVineQueryFromAssessment(data) {
+      const md = (data && data.recommended_metadata) ? data.recommended_metadata : {};
+      const summary = (data && data.summary) ? data.summary : {};
+      const series = String(md.series || summary.series || '').trim();
+      const issue = String(md.issue || summary.issue || '').trim();
+      const title = String(md.title || summary.title || '').trim();
+      const parts = [series, issue, title].filter(Boolean);
+      return parts.join(' ').replace(/\\s+/g, ' ').trim();
     }
 
     async function assessFile() {
@@ -722,6 +961,12 @@ INDEX_HTML = """<!doctype html>
       if (data.recommended_metadata) showJson('metadataJson', { metadata: data.recommended_metadata });
       if (data.style) document.getElementById('style').value = data.style;
       document.getElementById('styleInfo').textContent = data.detected_style ? `Detected: ${data.detected_style}` : 'Detected: none';
+      const cvQuery = document.getElementById('cvQuery');
+      const autoQuery = buildComicVineQueryFromAssessment(data);
+      if (cvQuery && autoQuery) {
+        cvQuery.value = autoQuery;
+        savePersistentFields();
+      }
       const thumb = '/api/thumbnail?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style) + '&_=' + Date.now();
       document.getElementById('coverThumb').src = thumb;
       setStatus('Assessment complete. Review recommended metadata, then write.', false);
@@ -741,7 +986,7 @@ INDEX_HTML = """<!doctype html>
       const parts = [];
       let idx = 0;
       const norm = String(pattern || '').trim();
-      const tokenRe = /\{([A-Za-z][A-Za-z0-9_]*)\}/g;
+      const tokenRe = /\\{([A-Za-z][A-Za-z0-9_]*)\\}/g;
       let m;
       while ((m = tokenRe.exec(norm)) !== null) {
         const lit = norm.slice(idx, m.index);
@@ -830,10 +1075,13 @@ INDEX_HTML = """<!doctype html>
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ path, write_path: writePath, style, metadata: patch })
         });
-        const out = await res.json();
+        const raw = await res.text();
+        let out;
+        try { out = JSON.parse(raw || '{}'); }
+        catch (_) { out = { ok: false, error: raw || ('HTTP ' + res.status) }; }
         showJson('metadataJson', out);
         if (res.ok && out.ok) setStatus('Metadata written to: ' + (out.written_path || out.path || ''), false);
-        else setStatus('Write failed: ' + (out.error || 'unknown error'), true);
+        else setStatus('Write failed: ' + (out.error || ('HTTP ' + res.status)), true);
       } catch (err) {
         setStatus('Write failed: ' + (err && err.message ? err.message : 'request failed'), true);
       }
@@ -994,6 +1242,222 @@ def guess_content_type(blob):
     return "application/octet-stream"
 
 
+def resolve_scan_root(root):
+    requested = str(root or "").strip().strip('"').strip("'")
+    if not requested:
+        return None, None, "root query param required"
+
+    candidate = os.path.abspath(os.path.expanduser(requested))
+    if os.path.isdir(candidate):
+        return candidate, None, None
+
+    trimmed = candidate.rstrip("/\\")
+    if trimmed and os.path.isdir(trimmed):
+        return trimmed, f"Normalized scan root to existing directory: {trimmed}", None
+
+    parent = os.path.dirname(trimmed)
+    leaf = os.path.basename(trimmed)
+    if parent and leaf and os.path.isdir(parent):
+        matches = []
+        try:
+            for p in Path(parent).rglob("*"):
+                if p.is_dir() and p.name == leaf:
+                    matches.append(str(p))
+                    if len(matches) > 2:
+                        break
+        except Exception:
+            matches = []
+
+        if len(matches) == 1:
+            resolved = matches[0]
+            return resolved, f"Requested root not found; auto-resolved to unique nested match: {resolved}", None
+        if len(matches) > 1:
+            return None, None, (
+                f"root directory not found: {requested}. Found multiple nested matches for '{leaf}' under {parent}; "
+                "please enter a more specific path."
+            )
+
+    # Browser folder pickers may only provide a folder name (no absolute path).
+    # If so, search common comic roots and auto-resolve only on unique match.
+    if not os.path.isabs(requested) and "/" not in requested and "\\" not in requested:
+        preferred_roots = []
+        broad_roots = []
+        home = os.path.expanduser("~")
+        env_hint = os.environ.get("COMICAPI_LIBRARY_ROOT", "").strip()
+        if env_hint:
+            preferred_roots.append(os.path.abspath(os.path.expanduser(env_hint)))
+        preferred_roots.append(os.path.join(home, "comics"))
+        broad_roots.append(home)
+
+        uniq_preferred = []
+        uniq_broad = []
+        seen = set()
+        for r in preferred_roots:
+            rr = os.path.abspath(r)
+            if rr in seen or not os.path.isdir(rr):
+                continue
+            seen.add(rr)
+            uniq_preferred.append(rr)
+        for r in broad_roots:
+            rr = os.path.abspath(r)
+            if rr in seen or not os.path.isdir(rr):
+                continue
+            seen.add(rr)
+            uniq_broad.append(rr)
+
+        def _find_named_dirs(base_dir, name):
+            found = []
+            found_seen = set()
+            try:
+                for p in Path(base_dir).rglob("*"):
+                    if p.is_dir() and p.name == name:
+                        resolved = str(p.resolve())
+                        if resolved in found_seen:
+                            continue
+                        found_seen.add(resolved)
+                        found.append(resolved)
+                        if len(found) > 1:
+                            break
+            except Exception:
+                return []
+            return found
+
+        for base in uniq_preferred:
+            found = _find_named_dirs(base, requested)
+            if len(found) == 1:
+                resolved = found[0]
+                return resolved, (
+                    f"Relative root '{requested}' auto-resolved under preferred root {base}: {resolved}"
+                ), None
+            if len(found) > 1:
+                return None, None, (
+                    f"root directory '{requested}' is ambiguous under preferred root {base}. "
+                    "Please enter an absolute path."
+                )
+
+        matches = []
+        seen_matches = set()
+        for base in uniq_broad:
+            try:
+                for p in Path(base).rglob("*"):
+                    if p.is_dir() and p.name == requested:
+                        found = str(p.resolve())
+                        if found in seen_matches:
+                            continue
+                        seen_matches.add(found)
+                        matches.append(found)
+                        if len(matches) > 1:
+                            break
+            except Exception:
+                continue
+            if len(matches) > 1:
+                break
+
+        if len(matches) == 1:
+            resolved = matches[0]
+            return resolved, (
+                f"Relative root '{requested}' auto-resolved to unique match: {resolved}"
+            ), None
+        if len(matches) > 1:
+            return None, None, (
+                f"root directory '{requested}' is ambiguous; multiple matches found under {', '.join(uniq_preferred + uniq_broad)}. "
+                "Please enter an absolute path."
+            )
+
+    return None, None, f"root directory does not exist or is not a directory: {requested}"
+
+
+def _safe_start_dir(candidate):
+    text = str(candidate or "").strip().strip('"').strip("'")
+    if text:
+        expanded = os.path.abspath(os.path.expanduser(text))
+        if os.path.isdir(expanded):
+            return expanded
+        parent = os.path.dirname(expanded)
+        if parent and os.path.isdir(parent):
+            return parent
+    home = os.path.expanduser("~")
+    if os.path.isdir(home):
+        return home
+    return "/"
+
+
+def _has_interactive_desktop_session():
+    env = os.environ
+
+    # Check Wayland socket presence
+    wayland_display = (env.get("WAYLAND_DISPLAY") or "").strip()
+    xdg_runtime_dir = (env.get("XDG_RUNTIME_DIR") or "").strip()
+    wayland_ok = bool(
+        wayland_display
+        and xdg_runtime_dir
+        and os.path.exists(os.path.join(xdg_runtime_dir, wayland_display))
+    )
+
+    # Check X11 socket presence
+    display = (env.get("DISPLAY") or "").strip()
+    x11_ok = False
+    if display:
+        m = re.match(r"^:?([0-9]+)", display)
+        if m:
+            x11_socket = f"/tmp/.X11-unix/X{m.group(1)}"
+            x11_ok = os.path.exists(x11_socket)
+
+    # Session hints: helps avoid launching pickers in non-desktop shells
+    has_session_hint = bool(
+        (env.get("DBUS_SESSION_BUS_ADDRESS") or "").strip()
+        or (env.get("XDG_CURRENT_DESKTOP") or "").strip()
+        or (env.get("DESKTOP_SESSION") or "").strip()
+    )
+
+    return (wayland_ok or x11_ok) and has_session_hint
+
+
+def pick_directory_native(start_dir):
+    start = _safe_start_dir(start_dir)
+    if not _has_interactive_desktop_session():
+        return None, (
+            "No interactive desktop session detected; native folder picker unavailable. "
+            "Enter an absolute path manually."
+        )
+
+    candidates = []
+    if shutil.which("zenity"):
+        candidates.append([
+            "zenity",
+            "--file-selection",
+            "--directory",
+            "--title=Select library folder",
+            "--timeout=30",
+            f"--filename={start.rstrip('/')}/",
+        ])
+    if shutil.which("kdialog"):
+        candidates.append(["kdialog", "--getexistingdirectory", start, "Select library folder"])
+
+    if not candidates:
+        return None, "No supported native picker found (install zenity or kdialog)"
+
+    last_error = "Picker failed"
+    for cmd in candidates:
+        try: proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        except subprocess.TimeoutExpired:
+            last_error = "Folder picker timed out; enter absolute path manually"
+        except Exception as exc:
+            last_error = str(exc)
+        else:
+            if proc.returncode == 0:
+                picked = (proc.stdout or "").strip()
+                if picked and os.path.isdir(picked):
+                    return os.path.abspath(picked), None
+                return None, "Picker returned invalid directory"
+            stderr = (proc.stderr or "").strip()
+            if stderr:
+                last_error = stderr
+            else:
+                last_error = "Picker cancelled"
+    return None, last_error
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ComicWebUI/0.6"
 
@@ -1010,14 +1474,20 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except BrokenPipeError:
+            pass
 
     def _bytes(self, status, payload, content_type):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
-        self.wfile.write(payload)
+        try:
+            self.wfile.write(payload)
+        except BrokenPipeError:
+            pass
 
     def _read_json(self):
         n = int(self.headers.get("Content-Length", "0"))
@@ -1038,21 +1508,22 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
-if parsed.path == "/api/version":
-    return self._json(200, {
-        "server_version": self.server_version,
-        "git_commit": "unknown",
-        "module_path": "unknown",
-        "features": ["assess", "browse_paths", "write_status", "version_endpoint"],
-    })
+        if parsed.path == "/api/version":
+            return self._json(200, {
+                "server_version": self.server_version,
+                "git_commit": "unknown",
+                "module_path": "unknown",
+                "features": ["assess", "browse_paths", "write_status", "version_endpoint"],
+            })
 
         if parsed.path == "/api/scan":
             root = qs.get("root", [""])[0]
-            if not root:
-                return self._json(400, {"error": "root query param required"})
+            resolved_root, scan_note, scan_error = resolve_scan_root(root)
+            if scan_error:
+                return self._json(400, {"error": scan_error})
             exts = {".cbz", ".cbr", ".cbt", ".pdf", ".zip", ".rar"}
             results = []
-            for p in Path(root).rglob("*"):
+            for p in Path(resolved_root).rglob("*"):
                 if p.is_file() and p.suffix.lower() in exts:
                     try:
                         ca = ComicArchive(str(p), default_image_path=str(p))
@@ -1060,7 +1531,20 @@ if parsed.path == "/api/version":
                         results.append(asdict(summary))
                     except Exception as exc:
                         results.append({"path": str(p), "error": str(exc)})
-            return self._json(200, {"count": len(results), "results": results})
+            return self._json(200, {
+                "count": len(results),
+                "results": results,
+                "requested_root": root,
+                "root": resolved_root,
+                "note": scan_note,
+            })
+
+        if parsed.path == "/api/pick_directory":
+            current = qs.get("current", [""])[0]
+            picked, error = pick_directory_native(current)
+            if error:
+                return self._json(400, {"error": error, "current": current})
+            return self._json(200, {"path": picked, "current": current})
 
         if parsed.path == "/api/read":
             path = qs.get("path", [""])[0]
@@ -1154,49 +1638,49 @@ if parsed.path == "/api/version":
 
         return self._json(404, {"error": "not found"})
 
-def do_POST(self):
-    parsed = urlparse(self.path)
-    if parsed.path != "/api/write":
-        return self._json(404, {"error": "not found"})
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/write":
+            return self._json(404, {"error": "not found"})
 
-    payload = self._read_json()
-    path = payload.get("path", "")
-    write_path = payload.get("write_path", "")
-    style = str(payload.get("style", "AUTO")).upper()
-    patch = payload.get("metadata", {})
-    if not path:
-        return self._json(400, {"error": "path is required"})
-    if style != "AUTO" and style not in STYLE_MAP:
-        return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
+        payload = self._read_json()
+        path = payload.get("path", "")
+        write_path = payload.get("write_path", "")
+        style = str(payload.get("style", "AUTO")).upper()
+        patch = payload.get("metadata", {})
+        if not path:
+            return self._json(400, {"error": "path is required"})
+        if style != "AUTO" and style not in STYLE_MAP:
+            return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
 
-    target_path = write_path.strip() or path
-    if target_path != path:
-        target_dir = os.path.dirname(os.path.abspath(target_path))
-        if target_dir and not os.path.exists(target_dir):
-            os.makedirs(target_dir, exist_ok=True)
-        shutil.copy2(path, target_path)
+        target_path = write_path.strip() or path
+        if target_path != path:
+            target_dir = os.path.dirname(os.path.abspath(target_path))
+            if target_dir and not os.path.exists(target_dir):
+                os.makedirs(target_dir, exist_ok=True)
+            shutil.copy2(path, target_path)
 
-    try:
-        ca = ComicArchive(target_path, default_image_path=target_path)
-        detected_style = detect_style(ca)
-        use_style = choose_style(style, detected_style)
-        md = ca.readMetadata(STYLE_MAP[use_style])
-        
-        # IMPORTANT: Always create fresh metadata from patch, don't rely on isEmpty
-        # Only use existing metadata as a base if patch is truly empty
-        if patch:  # If user provided metadata in the patch
-            if getattr(md, "isEmpty", False):
-                md = ca.metadataFromFilename(parse_scan_info=True)
-            apply_metadata(md, patch)
-        else:  # No metadata provided in patch
-            return self._json(400, {"error": "metadata patch is required", "path": path, "written_path": target_path})
-        
-        ok = ca.writeMetadata(md, STYLE_MAP[use_style])
-        if not ok:
-            return self._json(500, {"ok": False, "error": "Metadata write returned false", "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
-        return self._json(200, {"ok": True, "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
-    except Exception as exc:
-        return self._json(500, {"ok": False, "error": str(exc), "path": path, "written_path": target_path})
+        try:
+            ca = ComicArchive(target_path, default_image_path=target_path)
+            detected_style = detect_style(ca)
+            use_style = choose_style(style, detected_style)
+            md = ca.readMetadata(STYLE_MAP[use_style])
+
+            # IMPORTANT: Always create fresh metadata from patch, don't rely on isEmpty
+            # Only use existing metadata as a base if patch is truly empty
+            if patch:  # If user provided metadata in the patch
+                if getattr(md, "isEmpty", False):
+                    md = ca.metadataFromFilename(parse_scan_info=True)
+                apply_metadata(md, patch)
+            else:  # No metadata provided in patch
+                return self._json(400, {"error": "metadata patch is required", "path": path, "written_path": target_path})
+
+            ok = ca.writeMetadata(md, STYLE_MAP[use_style])
+            if not ok:
+                return self._json(500, {"ok": False, "error": "Metadata write returned false", "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
+            return self._json(200, {"ok": True, "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
+        except Exception as exc:
+            return self._json(500, {"ok": False, "error": str(exc), "path": path, "written_path": target_path})
 
 
 def run(host="127.0.0.1", port=8080):
