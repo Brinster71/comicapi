@@ -45,7 +45,7 @@ class CoMet:
 		header = '<?xml version="1.0" encoding="UTF-8"?>\n'
 		
 		tree = self.convertMetadataToXML( self, metadata )
-		return header + ET.tostring(tree.getroot())
+		return header + ET.tostring(tree.getroot(), encoding='unicode')
 
 	def indent( self, elem, level=0 ):
 		# for making the XML output readable

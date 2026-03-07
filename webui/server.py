@@ -421,9 +421,23 @@ INDEX_HTML = """<!doctype html>
       seriesSel.innerHTML = '';
       issueSel.innerHTML = '';
 
-      const series = (data.series || []).slice();
+      let series = (data.series || []).slice();
       const issues = (data.issues || []).slice();
-      if (!series.length) return;
+      if (!series.length && issues.length) {
+        const byId = new Map();
+        issues.forEach(i => {
+          const v = i.volume || {};
+          const key = String(v.id || '');
+          if (!key || byId.has(key)) return;
+          byId.set(key, { id: v.id, name: v.name, start_year: v.start_year, count_of_issues: v.count_of_issues });
+        });
+        series = Array.from(byId.values());
+      }
+      if (!series.length) {
+        document.getElementById('seriesHint').textContent = 'No series options found for this query.';
+        document.getElementById('issueHint').textContent = 'Try a broader ComicVine search query.';
+        return;
+      }
 
       const scored = series.map(s => {
         const name = String(s.name || '').toLowerCase();
@@ -789,6 +803,7 @@ INDEX_HTML = """<!doctype html>
     }
 
     async function writeMetadata() {
+      applySelectedComicVineFields();
       let obj;
       try { obj = JSON.parse(document.getElementById('metadataJson').value || '{}'); }
       catch (e) { return alert('Metadata JSON is invalid: ' + e); }
@@ -806,11 +821,17 @@ INDEX_HTML = """<!doctype html>
       const query = document.getElementById('cvQuery').value.trim();
       const apiKey = document.getElementById('apiKey').value.trim();
       if (!query) return alert('Enter a ComicVine search query first.');
+      setStatus('Searching ComicVine…', false);
       const qp = '/api/comicvine/search?query=' + encodeURIComponent(query) + (apiKey ? '&api_key=' + encodeURIComponent(apiKey) : '');
       const res = await fetch(qp);
       const data = await res.json();
       showJson('comicvineJson', data);
+      if (!res.ok || data.error) {
+        setStatus('ComicVine search failed: ' + (data.error || ('HTTP ' + res.status)), true);
+        return;
+      }
       await buildSeriesAndIssueSelectors(data);
+      setStatus('ComicVine search complete.', false);
     }
 
     loadPersistentFields();
@@ -1094,15 +1115,20 @@ class Handler(BaseHTTPRequestHandler):
                 os.makedirs(target_dir, exist_ok=True)
             shutil.copy2(path, target_path)
 
-        ca = ComicArchive(target_path, default_image_path=target_path)
-        detected_style = detect_style(ca)
-        use_style = choose_style(style, detected_style)
-        md = ca.readMetadata(STYLE_MAP[use_style])
-        if getattr(md, "isEmpty", False):
-            md = ca.metadataFromFilename(parse_scan_info=True)
-        apply_metadata(md, patch)
-        ok = ca.writeMetadata(md, STYLE_MAP[use_style])
-        return self._json(200, {"ok": bool(ok), "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
+        try:
+            ca = ComicArchive(target_path, default_image_path=target_path)
+            detected_style = detect_style(ca)
+            use_style = choose_style(style, detected_style)
+            md = ca.readMetadata(STYLE_MAP[use_style])
+            if getattr(md, "isEmpty", False):
+                md = ca.metadataFromFilename(parse_scan_info=True)
+            apply_metadata(md, patch)
+            ok = ca.writeMetadata(md, STYLE_MAP[use_style])
+            if not ok:
+                return self._json(500, {"ok": False, "error": "Metadata write returned false", "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
+            return self._json(200, {"ok": True, "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
+        except Exception as exc:
+            return self._json(500, {"ok": False, "error": str(exc), "path": path, "written_path": target_path})
 
 
 def run(host="127.0.0.1", port=8080):
