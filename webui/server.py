@@ -36,6 +36,7 @@ INDEX_HTML = """<!doctype html>
     .mapping-grid { display:grid; grid-template-columns: 22px 160px 1fr; gap:.35rem .5rem; align-items:center; margin:.35rem 0; }
     .small { font-size:.85rem; }
     .tight { min-width: 8rem !important; }
+    .status { margin-top:.4rem; font-size:.9rem; color:#145a2a; }
   </style>
 </head>
 <body>
@@ -45,14 +46,18 @@ INDEX_HTML = """<!doctype html>
   <div class='row'>
     <label>Library path:</label>
     <input id='rootPath' type='text' placeholder='/path/to/comics'>
+    <button onclick='browseLibraryPath()'>Browse…</button>
     <button onclick='scanLibrary()'>Scan</button>
   </div>
 
   <div class='row'>
     <label>Selected file:</label>
     <input id='comicPath' type='text' placeholder='/path/to/file.cbz'>
+    <button onclick='browseComicFile()'>Browse…</button>
+    <input id='comicPathPicker' type='file' accept='.cbz,.cbr,.cbt,.pdf,.zip,.rar' style='display:none' onchange='onComicFilePicked(event)'>
     <label>Write to:</label>
     <input id='writePath' type='text' placeholder='/path/to/output.cbz (defaults to selected file)'>
+    <button onclick='setWritePathFromSelected()'>Use selected file</button>
     <label>Style:</label>
     <select id='style' class='tight'>
       <option value='AUTO' selected>AUTO</option>
@@ -61,6 +66,7 @@ INDEX_HTML = """<!doctype html>
       <option value='COMET'>COMET</option>
     </select>
     <button onclick='readMetadata()'>Read metadata</button>
+    <button onclick='assessFile()'>Assess file</button>
     <span id='styleInfo' class='muted'></span>
   </div>
 
@@ -108,6 +114,13 @@ INDEX_HTML = """<!doctype html>
       <button onclick='writeManualMetadata()'>Write this raw metadata JSON to selected file</button>
     </div>
   </details>
+
+  <details>
+    <summary>File assessment JSON</summary>
+    <textarea id='assessmentJson' placeholder='File assessment output will appear here...' readonly></textarea>
+  </details>
+
+  <div id='writeStatus' class='status'></div>
 
   <h3>ComicVine selection flow</h3>
   <div class='meta-card'>
@@ -561,6 +574,62 @@ INDEX_HTML = """<!doctype html>
       if (sel.value) document.getElementById('map_publisher').value = sel.value;
     }
 
+
+    function setStatus(msg, isError=false) {
+      const el = document.getElementById('writeStatus');
+      if (!el) return;
+      el.textContent = msg || '';
+      el.style.color = isError ? '#9b1c1c' : '#145a2a';
+    }
+
+    async function browseLibraryPath() {
+      const input = document.getElementById('rootPath');
+      const current = (input.value || '').trim();
+
+      if (window.showDirectoryPicker) {
+        try {
+          const handle = await window.showDirectoryPicker();
+          if (handle && handle.name) {
+            if (!current || current === '.') input.value = handle.name;
+            setStatus('Folder picked in browser for convenience. Enter absolute server path before scanning if needed.', false);
+            savePersistentFields();
+            return;
+          }
+        } catch (_) {
+          // user cancelled or browser blocked picker; fall back to prompt
+        }
+      }
+
+      const entered = window.prompt('Enter folder path to scan on the server:', current || '');
+      if (entered == null) return;
+      input.value = String(entered).trim();
+      savePersistentFields();
+      setStatus('Library path set. Click Scan to scan this folder.', false);
+    }
+
+    function browseComicFile() {
+      document.getElementById('comicPathPicker').click();
+    }
+
+    function onComicFilePicked(evt) {
+      const files = (evt && evt.target && evt.target.files) ? Array.from(evt.target.files) : [];
+      if (!files.length) return;
+      const f = files[0];
+      const rel = f.webkitRelativePath || f.name || '';
+      document.getElementById('comicPath').value = rel;
+      if (!document.getElementById('writePath').value) document.getElementById('writePath').value = rel;
+      savePersistentFields();
+      setStatus('File selected in browser. If server path differs, paste absolute path manually.', false);
+    }
+
+    function setWritePathFromSelected() {
+      const path = (document.getElementById('comicPath').value || '').trim();
+      if (!path) return alert('Select a comic file first.');
+      document.getElementById('writePath').value = path;
+      savePersistentFields();
+      setStatus('Write target set to selected file.', false);
+    }
+
     async function scanLibrary() {
       const root = document.getElementById('rootPath').value.trim();
       if (!root) return alert('Enter a library path first.');
@@ -580,6 +649,7 @@ INDEX_HTML = """<!doctype html>
       const path = document.getElementById('comicPath').value.trim();
       const style = document.getElementById('style').value;
       if (!path) return alert('Select or enter a comic file path first.');
+      setStatus('Reading metadata…', false);
       const res = await fetch('/api/read?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style));
       const data = await res.json();
       showJson('metadataJson', data);
@@ -590,6 +660,24 @@ INDEX_HTML = """<!doctype html>
       renderSummary(data.summary || {});
       const thumb = '/api/thumbnail?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style) + '&_=' + Date.now();
       document.getElementById('coverThumb').src = thumb;
+      setStatus('Metadata loaded.', false);
+    }
+
+    async function assessFile() {
+      const path = document.getElementById('comicPath').value.trim();
+      const style = document.getElementById('style').value;
+      if (!path) return alert('Select or enter a comic file path first.');
+      setStatus('Assessing file…', false);
+      const res = await fetch('/api/assess?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style));
+      const data = await res.json();
+      showJson('assessmentJson', data);
+      if (data.summary) renderSummary(data.summary);
+      if (data.recommended_metadata) showJson('metadataJson', { metadata: data.recommended_metadata });
+      if (data.style) document.getElementById('style').value = data.style;
+      document.getElementById('styleInfo').textContent = data.detected_style ? `Detected: ${data.detected_style}` : 'Detected: none';
+      const thumb = '/api/thumbnail?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style) + '&_=' + Date.now();
+      document.getElementById('coverThumb').src = thumb;
+      setStatus('Assessment complete. Review recommended metadata, then write.', false);
     }
 
     function escapeRegexLiteral(text) {
@@ -688,12 +776,16 @@ INDEX_HTML = """<!doctype html>
       const style = document.getElementById('style').value;
       if (!path) return alert('Select or enter a comic file path first.');
       const patch = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : payload;
+      setStatus('Writing metadata to file…', false);
       const res = await fetch('/api/write', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ path, write_path: writePath, style, metadata: patch })
       });
-      showJson('metadataJson', await res.json());
+      const out = await res.json();
+      showJson('metadataJson', out);
+      if (res.ok && out.ok) setStatus('Metadata written to: ' + (out.written_path || out.path || ''), false);
+      else setStatus('Write failed: ' + (out.error || 'unknown error'), true);
     }
 
     async function writeMetadata() {
@@ -754,6 +846,32 @@ def metadata_summary(md_dict, detected_style, used_style):
         "series": md_dict.get("series"), "issue": md_dict.get("issue"), "title": md_dict.get("title"),
         "volume": md_dict.get("volume"), "year": md_dict.get("year"), "publisher": md_dict.get("publisher"),
         "detected_style": detected_style, "used_style": used_style,
+    }
+
+
+def build_assessment(ca, path, requested_style):
+    detected_style = detect_style(ca)
+    use_style = choose_style(requested_style, detected_style)
+    current_md = ca.readMetadata(STYLE_MAP[use_style])
+    current_md_dict = metadata_to_dict(current_md)
+    filename_md_dict = metadata_to_dict(ca.metadataFromFilename(parse_scan_info=True))
+    recommended = dict(current_md_dict)
+    for key in ("series", "issue", "title", "volume", "year", "publisher", "scanInfo"):
+        if not recommended.get(key) and filename_md_dict.get(key):
+            recommended[key] = filename_md_dict[key]
+    return {
+        "path": path,
+        "style": use_style,
+        "detected_style": detected_style,
+        "has_styles": {
+            "CIX": ca.hasMetadata(MetaDataStyle.CIX),
+            "CBI": ca.hasMetadata(MetaDataStyle.CBI),
+            "COMET": ca.hasMetadata(MetaDataStyle.COMET),
+        },
+        "current_metadata": current_md_dict,
+        "filename_metadata": filename_md_dict,
+        "recommended_metadata": recommended,
+        "summary": metadata_summary(recommended, detected_style, use_style),
     }
 
 
@@ -882,6 +1000,16 @@ class Handler(BaseHTTPRequestHandler):
                 "metadata": md_dict,
                 "summary": metadata_summary(md_dict, detected_style, use_style),
             })
+
+        if parsed.path == "/api/assess":
+            path = qs.get("path", [""])[0]
+            style = qs.get("style", ["AUTO"])[0].upper()
+            if not path:
+                return self._json(400, {"error": "path query param required"})
+            if style != "AUTO" and style not in STYLE_MAP:
+                return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
+            ca = ComicArchive(path, default_image_path=path)
+            return self._json(200, build_assessment(ca, path, style))
 
         if parsed.path == "/api/parse_filename":
             path = qs.get("path", [""])[0]

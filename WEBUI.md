@@ -13,6 +13,8 @@ python -m comicapi.webui.server
 
 Then open `http://127.0.0.1:8080`.
 
+In the UI, **Library Browse…** now helps choose/enter a folder path without uploading folder contents. Scanning still uses the server-side path you provide in `Library path`.
+
 ## ComicVine
 
 Set your key before starting:
@@ -32,6 +34,7 @@ The ComicVine key can be provided either:
 
 - `GET /api/scan?root=/path/to/library`
 - `GET /api/read?path=/path/to/file.cbz&style=AUTO`
+- `GET /api/assess?path=/path/to/file.cbz&style=AUTO`
 - `POST /api/write`
   ```json
   {
@@ -52,4 +55,6 @@ The ComicVine key can be provided either:
 
 
 - `AUTO` detects the existing metadata format (CIX/CBI/CoMet) and uses that style for read/write operations.
+- `GET /api/assess` returns a merged recommendation using existing embedded metadata plus filename-derived hints.
+- The **Write to** field controls output location; when set to a different path, the server copies the source file and writes metadata to that destination.
 - ComicVine results are shown as readable tables with match hints (issue/series/year alignment) in the UI.
