@@ -1,0 +1,9 @@
+name: comicapi
+dependencies:
+  - python=3.10
+  - pip
+  - pytest
+  - pip:
+      - natsort
+      - PyPDF2
+      - requests
