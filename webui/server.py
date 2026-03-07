@@ -644,7 +644,7 @@ INDEX_HTML = """<!doctype html>
       document.getElementById('comicPathPicker').click();
     }
 
-    function onComicFilePicked(evt) {
+      function onComicFilePicked(evt) {
       const files = (evt && evt.target && evt.target.files) ? Array.from(evt.target.files) : [];
       if (!files.length) return;
       const f = files[0];
@@ -652,7 +652,7 @@ INDEX_HTML = """<!doctype html>
       document.getElementById('comicPath').value = rel;
       if (!document.getElementById('writePath').value) document.getElementById('writePath').value = rel;
       savePersistentFields();
-      setStatus('File selected in browser. If server path differs, paste absolute path manually.', false);
+      setStatus('File selected: ' + rel + '. Note: enter absolute server path manually if different.', false);
     }
 
     function browseWritePath() {
