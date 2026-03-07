@@ -61,6 +61,7 @@ INDEX_HTML = """<!doctype html>
       <option value='COMET'>COMET</option>
     </select>
     <button onclick='readMetadata()'>Read metadata</button>
+    <button onclick='assessFile()'>Assess file</button>
     <span id='styleInfo' class='muted'></span>
   </div>
 
@@ -107,6 +108,11 @@ INDEX_HTML = """<!doctype html>
     <div class='row' style='margin-top:.5rem;'>
       <button onclick='writeManualMetadata()'>Write this raw metadata JSON to selected file</button>
     </div>
+  </details>
+
+  <details>
+    <summary>File assessment JSON</summary>
+    <textarea id='assessmentJson' placeholder='File assessment output will appear here...' readonly></textarea>
   </details>
 
   <h3>ComicVine selection flow</h3>
@@ -592,6 +598,21 @@ INDEX_HTML = """<!doctype html>
       document.getElementById('coverThumb').src = thumb;
     }
 
+    async function assessFile() {
+      const path = document.getElementById('comicPath').value.trim();
+      const style = document.getElementById('style').value;
+      if (!path) return alert('Select or enter a comic file path first.');
+      const res = await fetch('/api/assess?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style));
+      const data = await res.json();
+      showJson('assessmentJson', data);
+      if (data.summary) renderSummary(data.summary);
+      if (data.recommended_metadata) showJson('metadataJson', { metadata: data.recommended_metadata });
+      if (data.style) document.getElementById('style').value = data.style;
+      document.getElementById('styleInfo').textContent = data.detected_style ? `Detected: ${data.detected_style}` : 'Detected: none';
+      const thumb = '/api/thumbnail?path=' + encodeURIComponent(path) + '&style=' + encodeURIComponent(style) + '&_=' + Date.now();
+      document.getElementById('coverThumb').src = thumb;
+    }
+
     function escapeRegexLiteral(text) {
       const bs = String.fromCharCode(92);
       const specials = new Set([bs, '^', '$', '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|']);
@@ -757,6 +778,32 @@ def metadata_summary(md_dict, detected_style, used_style):
     }
 
 
+def build_assessment(ca, path, requested_style):
+    detected_style = detect_style(ca)
+    use_style = choose_style(requested_style, detected_style)
+    current_md = ca.readMetadata(STYLE_MAP[use_style])
+    current_md_dict = metadata_to_dict(current_md)
+    filename_md_dict = metadata_to_dict(ca.metadataFromFilename(parse_scan_info=True))
+    recommended = dict(current_md_dict)
+    for key in ("series", "issue", "title", "volume", "year", "publisher", "scanInfo"):
+        if not recommended.get(key) and filename_md_dict.get(key):
+            recommended[key] = filename_md_dict[key]
+    return {
+        "path": path,
+        "style": use_style,
+        "detected_style": detected_style,
+        "has_styles": {
+            "CIX": ca.hasMetadata(MetaDataStyle.CIX),
+            "CBI": ca.hasMetadata(MetaDataStyle.CBI),
+            "COMET": ca.hasMetadata(MetaDataStyle.COMET),
+        },
+        "current_metadata": current_md_dict,
+        "filename_metadata": filename_md_dict,
+        "recommended_metadata": recommended,
+        "summary": metadata_summary(recommended, detected_style, use_style),
+    }
+
+
 def apply_metadata(md, patch):
     for k, v in patch.items():
         setattr(md, k, v)
@@ -882,6 +929,16 @@ class Handler(BaseHTTPRequestHandler):
                 "metadata": md_dict,
                 "summary": metadata_summary(md_dict, detected_style, use_style),
             })
+
+        if parsed.path == "/api/assess":
+            path = qs.get("path", [""])[0]
+            style = qs.get("style", ["AUTO"])[0].upper()
+            if not path:
+                return self._json(400, {"error": "path query param required"})
+            if style != "AUTO" and style not in STYLE_MAP:
+                return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
+            ca = ComicArchive(path, default_image_path=path)
+            return self._json(200, build_assessment(ca, path, style))
 
         if parsed.path == "/api/parse_filename":
             path = qs.get("path", [""])[0]
