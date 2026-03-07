@@ -26,3 +26,12 @@ def test_build_assessment_prefers_filename_when_current_missing():
     assert result["recommended_metadata"]["series"] == "Saga"
     assert result["recommended_metadata"]["issue"] == "1"
     assert result["summary"]["series"] == "Saga"
+
+
+
+def test_index_html_has_library_picker_field_update_and_write_error_status():
+    html = server.INDEX_HTML
+    assert "function combinePickedFolderWithCurrentPath" in html
+    assert "input.value = combinePickedFolderWithCurrentPath(current, handle.name);" in html
+    assert "setStatus('Folder selected: ' + input.value" in html
+    assert "try {" in html and "setStatus('Write failed: ' + (err && err.message ? err.message : 'request failed'), true);" in html

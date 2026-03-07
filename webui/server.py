@@ -601,6 +601,20 @@ INDEX_HTML = """<!doctype html>
       el.style.color = isError ? '#9b1c1c' : '#145a2a';
     }
 
+    function combinePickedFolderWithCurrentPath(currentPath, pickedFolderName) {
+      const current = String(currentPath || '').trim();
+      const picked = String(pickedFolderName || '').trim();
+      if (!picked) return current;
+      if (!current) return picked;
+      const normalized = current.replace(/\\/g, '/').replace(/\/+$/, '');
+      if (!normalized) return picked;
+      const idx = normalized.lastIndexOf('/');
+      if (idx < 0) return picked;
+      const parent = normalized.slice(0, idx);
+      if (!parent) return '/' + picked;
+      return parent + '/' + picked;
+    }
+
     async function browseLibraryPath() {
       const input = document.getElementById('rootPath');
       const current = (input.value || '').trim();
@@ -609,9 +623,9 @@ INDEX_HTML = """<!doctype html>
         try {
           const handle = await window.showDirectoryPicker();
           if (handle && handle.name) {
-            if (!current || current === '.') input.value = handle.name;
-            setStatus('Folder picked in browser for convenience. Enter absolute server path before scanning if needed.', false);
+            input.value = combinePickedFolderWithCurrentPath(current, handle.name);
             savePersistentFields();
+            setStatus('Folder selected: ' + input.value + '. Confirm it matches the server path, then Scan.', false);
             return;
           }
         } catch (_) {
