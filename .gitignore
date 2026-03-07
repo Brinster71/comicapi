@@ -1,0 +1,13 @@
+# Python bytecode/cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Local comic archive files (copyrighted content)
+*.cbz
+*.cbr
+*.cb7
+*.cbt
+
+# Local scratch/generated folders from runtime packaging
+comicapi/
