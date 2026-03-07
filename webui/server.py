@@ -198,7 +198,7 @@ INDEX_HTML = """<!doctype html>
   <script>
     function showJson(id, obj) { document.getElementById(id).value = JSON.stringify(obj, null, 2); }
 
-    const appState = { cvData: null, lastIssue: null, lastSeries: null };
+    const appState = { cvData: null, seriesIssues: [], lastIssue: null, lastSeries: null };
 
     function savePersistentFields() {
       localStorage.setItem('comicapi.rootPath', document.getElementById('rootPath').value || '');
@@ -239,6 +239,15 @@ INDEX_HTML = """<!doctype html>
     function parseLoadedMetadata() {
       const raw = parseLoadedMetadataWrapper();
       return raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : raw;
+    }
+
+    function getPreferredIssueNumber() {
+      const md = parseLoadedMetadata();
+      if (md.issue) return normalizeIssue(md.issue);
+      const path = (document.getElementById('comicPath').value || '').split('/').pop() || '';
+      const m = path.match(/(?:^|[^\d])(\d{1,4})(?:[^\d]|$)/);
+      if (m) return normalizeIssue(m[1]);
+      return '';
     }
 
     function renderSummary(summary) {
@@ -336,7 +345,7 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
-    function buildSeriesAndIssueSelectors(data) {
+    async function buildSeriesAndIssueSelectors(data) {
       appState.cvData = data || {series:[], issues:[]};
       const md = parseLoadedMetadata();
       const seriesSel = document.getElementById('seriesSelect');
@@ -365,7 +374,7 @@ INDEX_HTML = """<!doctype html>
       });
 
       document.getElementById('seriesHint').textContent = 'Best guess preselected from current metadata.';
-      onSeriesSelected();
+      await onSeriesSelected();
 
       // reference tables
       const seriesBody = document.querySelector('#seriesTable tbody');
@@ -390,7 +399,7 @@ INDEX_HTML = """<!doctype html>
       });
     }
 
-    function selectSeriesByIssue(issue) {
+    async function selectSeriesByIssue(issue) {
       const sid = String((issue.volume || {}).id || '');
       const seriesSel = document.getElementById('seriesSelect');
       if (sid) {
@@ -398,10 +407,10 @@ INDEX_HTML = """<!doctype html>
           if (opt.value === sid) { seriesSel.value = sid; break; }
         }
       }
-      onSeriesSelected(issue);
+      await onSeriesSelected(issue);
     }
 
-    function onSeriesSelected(preferredIssue=null) {
+    async function onSeriesSelected(preferredIssue=null) {
       const seriesSel = document.getElementById('seriesSelect');
       const sid = seriesSel.value;
       const data = appState.cvData || {series:[], issues:[]};
@@ -415,17 +424,34 @@ INDEX_HTML = """<!doctype html>
 
       const issueSel = document.getElementById('issueSelect');
       issueSel.innerHTML = '';
-      let issues = (data.issues || []).filter(i => String((i.volume || {}).id || '') === sid);
+      const apiKey = (document.getElementById('apiKey').value || '').trim();
+      let issues = [];
+      try {
+        const q = '/api/comicvine/issues_for_series?series_id=' + encodeURIComponent(sid) + (apiKey ? '&api_key=' + encodeURIComponent(apiKey) : '');
+        const r = await fetch(q);
+        const payload = await r.json();
+        issues = payload.issues || [];
+      } catch (_) {}
+      if (!issues.length) {
+        issues = (data.issues || []).filter(i => String((i.volume || {}).id || '') === sid);
+      }
       if (!issues.length) issues = (data.issues || []).slice();
+      appState.seriesIssues = issues;
 
       const md = parseLoadedMetadata();
-      issues.sort((a,b) => looksLikeMatch(md,b).score - looksLikeMatch(md,a).score);
+      const preferredIssueNum = getPreferredIssueNumber();
+      issues.sort((a,b) => {
+        const as = looksLikeMatch(md,a).score + (normalizeIssue(a.issue_number||'') === preferredIssueNum ? 2 : 0);
+        const bs = looksLikeMatch(md,b).score + (normalizeIssue(b.issue_number||'') === preferredIssueNum ? 2 : 0);
+        return bs - as;
+      });
 
       issues.forEach((i, idx) => {
         const opt = document.createElement('option');
         opt.value = String(i.id || '');
         opt.textContent = `#${i.issue_number || '?'} - ${i.name || i.title || '(no name)'} (${i.cover_date || '?'})`;
         if (preferredIssue && String(preferredIssue.id||'') === String(i.id||'')) opt.selected = true;
+        else if (!preferredIssue && normalizeIssue(i.issue_number||'') === preferredIssueNum) opt.selected = true;
         else if (!preferredIssue && idx === 0) opt.selected = true;
         issueSel.appendChild(opt);
       });
@@ -455,8 +481,8 @@ INDEX_HTML = """<!doctype html>
     function onIssueSelected() {
       const issueSel = document.getElementById('issueSelect');
       const iid = issueSel.value;
-      const data = appState.cvData || {issues:[]};
-      const issue = (data.issues || []).find(i => String(i.id || '') === iid);
+      const fallbackIssues = (appState.cvData && appState.cvData.issues) ? appState.cvData.issues : [];
+      const issue = (appState.seriesIssues || []).find(i => String(i.id || '') === iid) || fallbackIssues.find(i => String(i.id || '') === iid);
       if (issue) {
         fillMappingFromIssue(issue);
         document.getElementById('issueHint').textContent = 'Best-guess issue preselected; adjust if needed.';
@@ -593,7 +619,7 @@ INDEX_HTML = """<!doctype html>
       const res = await fetch(qp);
       const data = await res.json();
       showJson('comicvineJson', data);
-      buildSeriesAndIssueSelectors(data);
+      await buildSeriesAndIssueSelectors(data);
     }
 
     loadPersistentFields();
@@ -785,6 +811,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._bytes(200, blob, guess_content_type(blob))
             except Exception as exc:
                 return self._json(500, {"error": str(exc)})
+
+        if parsed.path == "/api/comicvine/issues_for_series":
+            series_id = qs.get("series_id", [""])[0]
+            if not series_id:
+                return self._json(400, {"error": "series_id required"})
+            client = self._comicvine_client(qs)
+            if client is None:
+                return self._json(400, {"error": "Provide api_key query param or set COMICVINE_API_KEY environment variable"})
+            issues = client.volume_issues(series_id, limit=200)
+            return self._json(200, {"series_id": series_id, "issues": issues})
 
         if parsed.path == "/api/comicvine/search":
             query = qs.get("query", [""])[0]
