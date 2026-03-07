@@ -37,6 +37,13 @@ class ComicVineClient:
         data = self._get(f"/issue/4000-{issue_id}/")
         return data.get("results", {})
 
+    def volume_details(self, volume_id):
+        vid = str(volume_id)
+        if vid.startswith("4050-"):
+            vid = vid.split("-", 1)[1]
+        data = self._get(f"/volume/4050-{vid}/")
+        return data.get("results", {})
+
 
     def volume_issues(self, volume_id, limit=100):
         # ComicVine volume IDs are typically 4050-<id>; accept either raw numeric or prefixed.

@@ -90,17 +90,15 @@ INDEX_HTML = """<!doctype html>
   </div>
 
   <details>
-    <summary>Parse metadata from folder/file name</summary>
-    <div class='mapping-grid'>
-      <input type='checkbox' id='pf_series' checked><label for='pf_series'>Series</label><span></span>
-      <input type='checkbox' id='pf_issue' checked><label for='pf_issue'>Issue</label><span></span>
-      <input type='checkbox' id='pf_volume' checked><label for='pf_volume'>Volume</label><span></span>
-      <input type='checkbox' id='pf_year' checked><label for='pf_year'>Year</label><span></span>
-      <input type='checkbox' id='pf_scaninfo' checked><label for='pf_scaninfo'>Scan info</label><span></span>
-    </div>
+    <summary>Parse metadata from folder/file name pattern</summary>
     <div class='row'>
-      <button onclick='applyParsedFilenameMetadata()'>Apply selected parsed fields</button>
+      <label>Pattern:</label>
+      <input id='pathPattern' type='text' placeholder='{Series}/{VolumeNumber} - {Year}/{IssueNumber} - {Title}'>
+      <button onclick='previewPatternParse()'>Preview parse</button>
+      <button onclick='applyPatternParseToMapping()'>Apply to mapping</button>
     </div>
+    <div class='muted small'>Use variables like {Series}, {IssueNumber}, {VolumeNumber}, {Year}, {Title}, {Publisher}, {Month}, {Day}. Literal text and separators should match your folders/files.</div>
+    <textarea id='patternParseJson' placeholder='Pattern parse preview will appear here...' readonly></textarea>
   </details>
 
   <details>
@@ -198,13 +196,14 @@ INDEX_HTML = """<!doctype html>
   <script>
     function showJson(id, obj) { document.getElementById(id).value = JSON.stringify(obj, null, 2); }
 
-    const appState = { cvData: null, seriesIssues: [], lastIssue: null, lastSeries: null };
+    const appState = { cvData: null, seriesIssues: [], lastIssue: null, lastSeries: null, volumeDetails: null };
 
     function savePersistentFields() {
       localStorage.setItem('comicapi.rootPath', document.getElementById('rootPath').value || '');
       localStorage.setItem('comicapi.apiKey', document.getElementById('apiKey').value || '');
       localStorage.setItem('comicapi.comicPath', document.getElementById('comicPath').value || '');
       localStorage.setItem('comicapi.writePath', document.getElementById('writePath').value || '');
+      localStorage.setItem('comicapi.pathPattern', document.getElementById('pathPattern').value || '');
     }
 
     function loadPersistentFields() {
@@ -212,8 +211,9 @@ INDEX_HTML = """<!doctype html>
       document.getElementById('apiKey').value = localStorage.getItem('comicapi.apiKey') || '';
       document.getElementById('comicPath').value = localStorage.getItem('comicapi.comicPath') || '';
       document.getElementById('writePath').value = localStorage.getItem('comicapi.writePath') || '';
+      document.getElementById('pathPattern').value = localStorage.getItem('comicapi.pathPattern') || '{Series}/{VolumeNumber} - {Year}/{IssueNumber} - {Title}';
       if (!document.getElementById('writePath').value) document.getElementById('writePath').value = document.getElementById('comicPath').value;
-      ['rootPath','apiKey','comicPath','writePath'].forEach(id => document.getElementById(id).addEventListener('change', savePersistentFields));
+      ['rootPath','apiKey','comicPath','writePath','pathPattern'].forEach(id => document.getElementById(id).addEventListener('change', savePersistentFields));
     }
 
     function togglePin(which) {
@@ -287,29 +287,84 @@ INDEX_HTML = """<!doctype html>
       return '';
     }
 
+    function firstCreditNames(personCredits, roleNames) {
+      if (!Array.isArray(personCredits) || !personCredits.length) return '';
+      const wanted = roleNames.map(x => String(x || '').toLowerCase());
+      const names = personCredits
+        .filter(c => wanted.some(w => String(c.role || '').toLowerCase().includes(w)))
+        .map(c => (c.person && c.person.name) || '')
+        .filter(Boolean);
+      return names.join(', ');
+    }
+
+    function dedupeKeepOrder(arr) {
+      const seen = new Set();
+      const out = [];
+      (arr || []).forEach(v => {
+        const key = String(v || '');
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        out.push(key);
+      });
+      return out;
+    }
+
+    function setFieldWithCandidates(fieldId, preferred, candidates) {
+      const el = document.getElementById(fieldId);
+      const values = dedupeKeepOrder([preferred, ...(candidates || [])]);
+      if (!el) return;
+      el.value = values.length ? values[0] : '';
+      el.dataset.candidates = JSON.stringify(values.slice(1));
+      el.setAttribute('title', values.length > 1 ? ('Alternatives: ' + values.slice(1).join(' | ')) : '');
+    }
+
     function fillMappingFromIssue(issue) {
       appState.lastIssue = issue || {};
       const volume = issue.volume || {};
+      const details = appState.volumeDetails || {};
       const coverDate = String(issue.cover_date || '');
       const publishedYear = coverDate.length >= 4 ? coverDate.slice(0,4) : '';
-      const pub = (volume.publisher && volume.publisher.name) || '';
-      document.getElementById('map_series').value = volume.name || '';
-      document.getElementById('map_issue').value = issue.issue_number || '';
-      document.getElementById('map_title').value = issue.name || issue.title || '';
-      document.getElementById('map_issue_name').value = issue.name || issue.title || document.getElementById('map_title').value || '';
-      document.getElementById('map_year').value = publishedYear;
-      document.getElementById('map_published_year').value = publishedYear;
-      document.getElementById('map_start_year').value = volume.start_year || '';
-      if (!document.getElementById('map_volume').value) {
-        document.getElementById('map_volume').value = extractVolumeGuess(issue, appState.lastSeries || {});
-      }
-      document.getElementById('map_publisher').value = pub;
-      document.getElementById('map_issue_id').value = issue.id || '';
-      document.getElementById('map_series_id').value = volume.id || '';
-      document.getElementById('map_description').value = issue.description || issue.deck || '';
+      const seriesStartYear = details.start_year || volume.start_year || '';
+      const titleCandidate = issue.name || issue.title || '';
+      const issueTitleAlt = issue.title || '';
+      const pubFromIssue = (volume.publisher && volume.publisher.name) || '';
+      const pubFromDetails = details.publisher ? (details.publisher.name || '') : '';
+      const publisherCandidates = [pubFromDetails, pubFromIssue];
+
+      setFieldWithCandidates('map_series', volume.name || details.name || '', [details.name || '']);
+      setFieldWithCandidates('map_issue', issue.issue_number || '', []);
+      setFieldWithCandidates('map_title', titleCandidate, [issueTitleAlt, (details.first_issue || {}).name || '']);
+      setFieldWithCandidates('map_issue_name', titleCandidate, [issueTitleAlt]);
+      setFieldWithCandidates('map_year', publishedYear, []);
+      setFieldWithCandidates('map_published_year', publishedYear, []);
+      setFieldWithCandidates('map_start_year', seriesStartYear, [publishedYear]);
+      const guessedVolume = extractVolumeGuess(issue, details || {}) || extractVolumeGuess(issue, appState.lastSeries || {});
+      setFieldWithCandidates('map_volume', guessedVolume || '1', [seriesStartYear]);
+      setFieldWithCandidates('map_publisher', publisherCandidates[0] || '', publisherCandidates.slice(1));
+      setFieldWithCandidates('map_issue_id', issue.id || '', []);
+      setFieldWithCandidates('map_series_id', volume.id || details.id || '', []);
+      setFieldWithCandidates('map_description', issue.description || issue.deck || details.deck || '', []);
       const dateParts = coverDate.split('-');
-      document.getElementById('map_month').value = dateParts.length > 1 ? dateParts[1] : '';
-      document.getElementById('map_day').value = dateParts.length > 2 ? dateParts[2] : '';
+      setFieldWithCandidates('map_month', dateParts.length > 1 ? dateParts[1] : '', []);
+      setFieldWithCandidates('map_day', dateParts.length > 2 ? dateParts[2] : '', []);
+
+      const credits = issue.person_credits || [];
+      setFieldWithCandidates('map_writer', firstCreditNames(credits, ['writer']), []);
+      setFieldWithCandidates('map_cover_artist', firstCreditNames(credits, ['cover']), []);
+      setFieldWithCandidates('map_editor', firstCreditNames(credits, ['editor']), []);
+      setFieldWithCandidates('map_penciller', firstCreditNames(credits, ['penciller', 'pencil']), []);
+      setFieldWithCandidates('map_inker', firstCreditNames(credits, ['inker', 'ink']), []);
+      setFieldWithCandidates('map_colorist', firstCreditNames(credits, ['colorist', 'color']), []);
+      setFieldWithCandidates('map_letterer', firstCreditNames(credits, ['letterer', 'letter']), []);
+
+      const arc = (Array.isArray(issue.story_arc_credits) && issue.story_arc_credits.length) ? issue.story_arc_credits[0] : null;
+      setFieldWithCandidates('map_story_arc', arc ? (arc.name || '') : '', []);
+      setFieldWithCandidates('map_story_arc_num', '', []);
+      setFieldWithCandidates('map_tags', '', []);
+      setFieldWithCandidates('map_page_count', '', []);
+      setFieldWithCandidates('map_isbn', '', []);
+      setFieldWithCandidates('map_barcode', '', []);
+      setFieldWithCandidates('map_language', details.site_detail_url ? 'en' : '', []);
     }
 
     function applyAltSource(target) {
@@ -416,10 +471,21 @@ INDEX_HTML = """<!doctype html>
       const data = appState.cvData || {series:[], issues:[]};
       const series = (data.series || []).find(s => String(s.id || '') === sid) || null;
       appState.lastSeries = series;
+      appState.volumeDetails = null;
       if (series) {
         document.getElementById('map_series').value = series.name || '';
         document.getElementById('map_start_year').value = series.start_year || '';
         document.getElementById('map_series_id').value = series.id || '';
+        const apiKeyForDetails = (document.getElementById('apiKey').value || '').trim();
+        try {
+          const qd = '/api/comicvine/series_details?series_id=' + encodeURIComponent(sid) + (apiKeyForDetails ? '&api_key=' + encodeURIComponent(apiKeyForDetails) : '');
+          const rd = await fetch(qd);
+          const detailsPayload = await rd.json();
+          appState.volumeDetails = detailsPayload.series || null;
+          if (appState.volumeDetails && appState.volumeDetails.start_year) {
+            document.getElementById('map_start_year').value = appState.volumeDetails.start_year;
+          }
+        } catch (_) {}
       }
 
       const issueSel = document.getElementById('issueSelect');
@@ -458,6 +524,7 @@ INDEX_HTML = """<!doctype html>
 
       // publisher majority chooser
       const pubs = issues.map(i => ((i.volume||{}).publisher||{}).name).filter(Boolean);
+      if (appState.volumeDetails && appState.volumeDetails.publisher && appState.volumeDetails.publisher.name) pubs.push(appState.volumeDetails.publisher.name);
       const counts = new Map();
       pubs.forEach(p => counts.set(p, (counts.get(p)||0)+1));
       const ordered = [...counts.entries()].sort((a,b)=>b[1]-a[1]);
@@ -525,34 +592,64 @@ INDEX_HTML = """<!doctype html>
       document.getElementById('coverThumb').src = thumb;
     }
 
-    async function applyParsedFilenameMetadata() {
+    function escapeRegexLiteral(text) {
+      const specials = '\\.^$|?*+()[]{}';
+      return Array.from(String(text || '')).map(ch => (specials.includes(ch) ? ('\\' + ch) : ch)).join('');
+    }
+
+    function patternToRegex(pattern) {
+      const tokenMap = {
+        Series: 'series', IssueNumber: 'issue', VolumeNumber: 'volume', Year: 'year', Title: 'title',
+        Publisher: 'publisher', Month: 'month', Day: 'day'
+      };
+      const parts = [];
+      let idx = 0;
+      const norm = String(pattern || '').trim();
+      const tokenRe = /\{([A-Za-z][A-Za-z0-9_]*)\}/g;
+      let m;
+      while ((m = tokenRe.exec(norm)) !== null) {
+        const lit = norm.slice(idx, m.index);
+        parts.push(escapeRegexLiteral(lit));
+        const token = m[1];
+        const key = tokenMap[token] || token.toLowerCase();
+        parts.push('(?<' + key + '>.+?)');
+        idx = m.index + m[0].length;
+      }
+      parts.push(escapeRegexLiteral(norm.slice(idx)));
+      const source = '^' + parts.join('') + '$';
+      return new RegExp(source, 'i');
+    }
+
+    async function previewPatternParse() {
       const path = document.getElementById('comicPath').value.trim();
+      const pattern = document.getElementById('pathPattern').value.trim();
       if (!path) return alert('Select or enter a comic file path first.');
-      const res = await fetch('/api/parse_filename?path=' + encodeURIComponent(path));
-      const data = await res.json();
-      const parsed = data.metadata || {};
-      const wrap = parseLoadedMetadataWrapper();
-      const md = (wrap.metadata && typeof wrap.metadata === 'object') ? wrap.metadata : wrap;
+      if (!pattern) return alert('Enter a parse pattern first.');
+      const rel = path.replace(/\\/g, '/');
+      const normalized = rel.replace(/\.[^.\\/]+$/, '');
+      const rx = patternToRegex(pattern.replace(/\\/g, '/'));
+      const match = normalized.match(rx);
+      const out = match && match.groups ? match.groups : {};
+      showJson('patternParseJson', { pattern, source: normalized, extracted: out });
+      savePersistentFields();
+    }
 
-      const mapping = [
-        ['pf_series','series','map_series'],
-        ['pf_issue','issue','map_issue'],
-        ['pf_volume','volume','map_volume'],
-        ['pf_year','year','map_year'],
-        ['pf_scaninfo','scanInfo',null],
-      ];
-      mapping.forEach(([chk, key, input]) => {
-        if (document.getElementById(chk).checked && parsed[key]) {
-          md[key] = parsed[key];
-          if (input) document.getElementById(input).value = parsed[key];
-        }
+    function applyPatternParseToMapping() {
+      let obj;
+      try { obj = JSON.parse(document.getElementById('patternParseJson').value || '{}'); }
+      catch (e) { return alert('Pattern parse JSON is invalid: ' + e); }
+      const parsed = obj.extracted || {};
+      const map = {
+        series: 'map_series', issue: 'map_issue', volume: 'map_volume', year: 'map_year',
+        title: 'map_title', publisher: 'map_publisher', month: 'map_month', day: 'map_day'
+      };
+      Object.keys(map).forEach(k => {
+        if (parsed[k] != null && parsed[k] !== '') document.getElementById(map[k]).value = String(parsed[k]);
       });
-
-      if (wrap.metadata && typeof wrap.metadata === 'object') { wrap.metadata = md; showJson('metadataJson', wrap); }
-      else showJson('metadataJson', md);
     }
 
     function applySelectedComicVineFields() {
+
       let wrapper;
       try { wrapper = JSON.parse(document.getElementById('metadataJson').value || '{}'); }
       catch (e) { return alert('Metadata JSON is invalid: ' + e); }
@@ -821,6 +918,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "Provide api_key query param or set COMICVINE_API_KEY environment variable"})
             issues = client.volume_issues(series_id, limit=200)
             return self._json(200, {"series_id": series_id, "issues": issues})
+
+        if parsed.path == "/api/comicvine/series_details":
+            series_id = qs.get("series_id", [""])[0]
+            if not series_id:
+                return self._json(400, {"error": "series_id required"})
+            client = self._comicvine_client(qs)
+            if client is None:
+                return self._json(400, {"error": "Provide api_key query param or set COMICVINE_API_KEY environment variable"})
+            series = client.volume_details(series_id)
+            return self._json(200, {"series_id": series_id, "series": series})
 
         if parsed.path == "/api/comicvine/search":
             query = qs.get("query", [""])[0]
