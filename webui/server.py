@@ -659,14 +659,14 @@ INDEX_HTML = """<!doctype html>
       document.getElementById('writePathPicker').click();
     }
 
-    function onWriteFilePicked(evt) {
+       function onWriteFilePicked(evt) {
       const files = (evt && evt.target && evt.target.files) ? Array.from(evt.target.files) : [];
       if (!files.length) return;
       const f = files[0];
       const rel = f.webkitRelativePath || f.name || '';
       document.getElementById('writePath').value = rel;
       savePersistentFields();
-      setStatus('Write target selected in browser. If server path differs, paste absolute path manually.', false);
+      setStatus('Write target: ' + rel + '. Enter absolute server path if server differs from browser.', false);
     }
 
     function setWritePathFromSelected() {
