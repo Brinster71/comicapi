@@ -1038,29 +1038,13 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
-        if parsed.path == "/api/version":
-            module_path = str(Path(__file__).resolve())
-            git_commit = "unknown"
-            try:
-                proc = subprocess.run(
-                    ["git", "rev-parse", "--short", "HEAD"],
-                    cwd=str(Path(__file__).resolve().parents[1]),
-                    text=True,
-                    stderr=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE,
-                    timeout=1,
-                    check=False,
-                )
-                if proc.returncode == 0:
-                    git_commit = proc.stdout.strip() or "unknown"
-            except Exception:
-                pass
-            return self._json(200, {
-                "server_version": self.server_version,
-                "git_commit": git_commit,
-                "module_path": module_path,
-                "features": ["assess", "browse_paths", "write_status", "version_endpoint"],
-            })
+if parsed.path == "/api/version":
+    return self._json(200, {
+        "server_version": self.server_version,
+        "git_commit": "unknown",
+        "module_path": "unknown",
+        "features": ["assess", "browse_paths", "write_status", "version_endpoint"],
+    })
 
         if parsed.path == "/api/scan":
             root = qs.get("root", [""])[0]
