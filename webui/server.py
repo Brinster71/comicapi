@@ -593,8 +593,9 @@ INDEX_HTML = """<!doctype html>
     }
 
     function escapeRegexLiteral(text) {
-      const specials = '\\.^$|?*+()[]{}';
-      return Array.from(String(text || '')).map(ch => (specials.includes(ch) ? ('\\' + ch) : ch)).join('');
+      const bs = String.fromCharCode(92);
+      const specials = new Set([bs, '^', '$', '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|']);
+      return Array.from(String(text || '')).map(ch => (specials.has(ch) ? (bs + ch) : ch)).join('');
     }
 
     function patternToRegex(pattern) {
@@ -625,9 +626,10 @@ INDEX_HTML = """<!doctype html>
       const pattern = document.getElementById('pathPattern').value.trim();
       if (!path) return alert('Select or enter a comic file path first.');
       if (!pattern) return alert('Enter a parse pattern first.');
-      const rel = path.replace(/\\/g, '/');
-      const normalized = rel.replace(/\.[^.\\/]+$/, '');
-      const rx = patternToRegex(pattern.replace(/\\/g, '/'));
+      const bs = String.fromCharCode(92);
+      const rel = path.split(bs).join('/');
+      const normalized = rel.replace(/[.][^./]+$/, '');
+      const rx = patternToRegex(pattern.split(bs).join('/'));
       const match = normalized.match(rx);
       const out = match && match.groups ? match.groups : {};
       showJson('patternParseJson', { pattern, source: normalized, extracted: out });
