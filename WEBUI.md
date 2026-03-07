@@ -32,6 +32,7 @@ The ComicVine key can be provided either:
 
 - `GET /api/scan?root=/path/to/library`
 - `GET /api/read?path=/path/to/file.cbz&style=AUTO`
+- `GET /api/assess?path=/path/to/file.cbz&style=AUTO`
 - `POST /api/write`
   ```json
   {
@@ -52,4 +53,5 @@ The ComicVine key can be provided either:
 
 
 - `AUTO` detects the existing metadata format (CIX/CBI/CoMet) and uses that style for read/write operations.
+- `GET /api/assess` returns a merged recommendation using existing embedded metadata plus filename-derived hints.
 - ComicVine results are shown as readable tables with match hints (issue/series/year alignment) in the UI.
