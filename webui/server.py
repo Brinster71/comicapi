@@ -1170,42 +1170,49 @@ class Handler(BaseHTTPRequestHandler):
 
         return self._json(404, {"error": "not found"})
 
-    def do_POST(self):
-        parsed = urlparse(self.path)
-        if parsed.path != "/api/write":
-            return self._json(404, {"error": "not found"})
+def do_POST(self):
+    parsed = urlparse(self.path)
+    if parsed.path != "/api/write":
+        return self._json(404, {"error": "not found"})
 
-        payload = self._read_json()
-        path = payload.get("path", "")
-        write_path = payload.get("write_path", "")
-        style = str(payload.get("style", "AUTO")).upper()
-        patch = payload.get("metadata", {})
-        if not path:
-            return self._json(400, {"error": "path is required"})
-        if style != "AUTO" and style not in STYLE_MAP:
-            return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
+    payload = self._read_json()
+    path = payload.get("path", "")
+    write_path = payload.get("write_path", "")
+    style = str(payload.get("style", "AUTO")).upper()
+    patch = payload.get("metadata", {})
+    if not path:
+        return self._json(400, {"error": "path is required"})
+    if style != "AUTO" and style not in STYLE_MAP:
+        return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
 
-        target_path = write_path.strip() or path
-        if target_path != path:
-            target_dir = os.path.dirname(os.path.abspath(target_path))
-            if target_dir and not os.path.exists(target_dir):
-                os.makedirs(target_dir, exist_ok=True)
-            shutil.copy2(path, target_path)
+    target_path = write_path.strip() or path
+    if target_path != path:
+        target_dir = os.path.dirname(os.path.abspath(target_path))
+        if target_dir and not os.path.exists(target_dir):
+            os.makedirs(target_dir, exist_ok=True)
+        shutil.copy2(path, target_path)
 
-        try:
-            ca = ComicArchive(target_path, default_image_path=target_path)
-            detected_style = detect_style(ca)
-            use_style = choose_style(style, detected_style)
-            md = ca.readMetadata(STYLE_MAP[use_style])
+    try:
+        ca = ComicArchive(target_path, default_image_path=target_path)
+        detected_style = detect_style(ca)
+        use_style = choose_style(style, detected_style)
+        md = ca.readMetadata(STYLE_MAP[use_style])
+        
+        # IMPORTANT: Always create fresh metadata from patch, don't rely on isEmpty
+        # Only use existing metadata as a base if patch is truly empty
+        if patch:  # If user provided metadata in the patch
             if getattr(md, "isEmpty", False):
                 md = ca.metadataFromFilename(parse_scan_info=True)
             apply_metadata(md, patch)
-            ok = ca.writeMetadata(md, STYLE_MAP[use_style])
-            if not ok:
-                return self._json(500, {"ok": False, "error": "Metadata write returned false", "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
-            return self._json(200, {"ok": True, "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
-        except Exception as exc:
-            return self._json(500, {"ok": False, "error": str(exc), "path": path, "written_path": target_path})
+        else:  # No metadata provided in patch
+            return self._json(400, {"error": "metadata patch is required", "path": path, "written_path": target_path})
+        
+        ok = ca.writeMetadata(md, STYLE_MAP[use_style])
+        if not ok:
+            return self._json(500, {"ok": False, "error": "Metadata write returned false", "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
+        return self._json(200, {"ok": True, "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
+    except Exception as exc:
+        return self._json(500, {"ok": False, "error": str(exc), "path": path, "written_path": target_path})
 
 
 def run(host="127.0.0.1", port=8080):
