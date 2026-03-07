@@ -35,3 +35,13 @@ def test_index_html_has_library_picker_field_update_and_write_error_status():
     assert "input.value = combinePickedFolderWithCurrentPath(current, handle.name);" in html
     assert "setStatus('Folder selected: ' + input.value" in html
     assert "try {" in html and "setStatus('Write failed: ' + (err && err.message ? err.message : 'request failed'), true);" in html
+
+
+
+def test_index_html_has_diagnostics_and_write_browse_hooks():
+    html = server.INDEX_HTML
+    assert "id='diagBanner'" in html
+    assert "async function loadRuntimeDiagnostics()" in html
+    assert "fetch('/api/version')" in html
+    assert "function browseWritePath()" in html
+    assert "function onWriteFilePicked(evt)" in html

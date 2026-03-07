@@ -35,6 +35,7 @@ The ComicVine key can be provided either:
 - `GET /api/scan?root=/path/to/library`
 - `GET /api/read?path=/path/to/file.cbz&style=AUTO`
 - `GET /api/assess?path=/path/to/file.cbz&style=AUTO`
+- `GET /api/version`
 - `POST /api/write`
   ```json
   {
@@ -58,4 +59,5 @@ The ComicVine key can be provided either:
 - `GET /api/assess` returns a merged recommendation using existing embedded metadata plus filename-derived hints.
 - The **Write to** field controls output location; when set to a different path, the server copies the source file and writes metadata to that destination.
 - ComicVine search now reports API errors in the status area and can build series options from issue results when direct series results are sparse.
+- The UI shows a runtime diagnostics banner (server version, git commit, module path, features) from `GET /api/version` to verify which build is running.
 - ComicVine results are shown as readable tables with match hints (issue/series/year alignment) in the UI.
