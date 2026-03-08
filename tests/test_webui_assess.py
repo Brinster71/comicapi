@@ -67,6 +67,8 @@ def test_index_html_has_diagnostics_and_write_browse_hooks():
     assert "const parts = [series, issue, title].filter(Boolean);" in html
     assert "const autoQuery = buildComicVineQueryFromAssessment(data);" in html
     assert "sidecar_path" in html
+    assert "save_mode" in html
+    assert "postWrite(namingTarget, 'hardlink')" in html
     assert "cvQuery.value = autoQuery;" in html
 
 

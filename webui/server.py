@@ -1049,6 +1049,11 @@ INDEX_HTML = """<!doctype html>
       return (base + '/' + child).replace(/\/+/g, '/');
     }
 
+
+    function hasSupportedArchiveExtension(path) {
+      return /\.(?:cbz|cbr|cbt|pdf|zip|rar)$/i.test(String(path || '').trim());
+    }
+
     function setComicPathValue(path) {
       document.getElementById('comicPath').value = path || '';
       maybeSyncWritePath(true);
@@ -2447,6 +2452,10 @@ INDEX_HTML = """<!doctype html>
         setStatus('Write failed: selected file path must be absolute on the server. Set Library path and reselect, or enter absolute path manually.', true);
         return;
       }
+      if (!hasSupportedArchiveExtension(path)) {
+        setStatus('Write failed: selected path must point to a comic archive file (.cbz/.cbr/.cbt/.pdf/.zip/.rar), not a folder.', true);
+        return;
+      }
 
       let writePath = rawWritePath;
       if (writePath && !isAbsolutePath(writePath)) {
@@ -2469,11 +2478,11 @@ INDEX_HTML = """<!doctype html>
           ? namingTarget
           : (writePath || '');
 
-        async function postWrite(target) {
+        async function postWrite(target, saveMode='copy') {
           const res = await fetch('/api/write', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ path, write_path: target, style, metadata: patch })
+            body: JSON.stringify({ path, write_path: target, style, metadata: patch, save_mode: saveMode })
           });
           const raw = await res.text();
           let out;
@@ -2482,7 +2491,8 @@ INDEX_HTML = """<!doctype html>
           return { res, out };
         }
 
-        const first = await postWrite(primaryTarget);
+        const firstMode = (singleNaming.apply && namingTarget && primaryTarget === namingTarget) ? 'hardlink' : 'copy';
+        const first = await postWrite(primaryTarget, firstMode);
         if (!first.res.ok || !first.out.ok) {
           setStatus('Write failed: ' + (first.out.error || ('HTTP ' + first.res.status)), true);
           return;
@@ -2490,7 +2500,7 @@ INDEX_HTML = """<!doctype html>
 
         const firstPath = first.out.written_path || first.out.path || path;
         if (singleNaming.apply && !singleNaming.override && namingTarget && namingTarget !== firstPath) {
-          const mirror = await postWrite(namingTarget);
+          const mirror = await postWrite(namingTarget, 'hardlink');
           if (!mirror.res.ok || !mirror.out.ok) {
             setStatus('Primary write succeeded, naming mirror failed: ' + (mirror.out.error || ('HTTP ' + mirror.res.status)), true);
             return;
@@ -3629,17 +3639,18 @@ INDEX_HTML = """<!doctype html>
           const namingTarget = buildBulkNamingWriteTarget(row);
           const primaryTarget = (bulkNaming.apply && bulkNaming.override && namingTarget) ? namingTarget : '';
 
-          async function postBulkWrite(target) {
+          async function postBulkWrite(target, saveMode='copy') {
             const res = await fetch('/api/write', {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ path: row.path, write_path: target, style, metadata: patch })
+              body: JSON.stringify({ path: row.path, write_path: target, style, metadata: patch, save_mode: saveMode })
             });
             const payload = await res.json();
             return { res, payload };
           }
 
-          const primary = await postBulkWrite(primaryTarget);
+          const primaryMode = (bulkNaming.apply && namingTarget && primaryTarget === namingTarget) ? 'hardlink' : 'copy';
+          const primary = await postBulkWrite(primaryTarget, primaryMode);
           if (!primary.res.ok || !primary.payload || !primary.payload.ok) {
             row.writeState = 'failed';
             row.writeError = (primary.payload && primary.payload.error) ? primary.payload.error : ('HTTP ' + primary.res.status);
@@ -3649,7 +3660,7 @@ INDEX_HTML = """<!doctype html>
 
           const writtenPrimary = primary.payload.written_path || row.path;
           if (bulkNaming.apply && !bulkNaming.override && namingTarget && namingTarget !== writtenPrimary) {
-            const mirror = await postBulkWrite(namingTarget);
+            const mirror = await postBulkWrite(namingTarget, 'hardlink');
             if (!mirror.res.ok || !mirror.payload || !mirror.payload.ok) {
               row.writeState = 'failed';
               row.writeError = 'Primary write succeeded; naming mirror failed: ' + ((mirror.payload && mirror.payload.error) ? mirror.payload.error : ('HTTP ' + mirror.res.status));
@@ -4321,26 +4332,41 @@ class Handler(BaseHTTPRequestHandler):
         payload = self._read_json()
         path = payload.get("path", "")
         write_path = payload.get("write_path", "")
+        save_mode = str(payload.get("save_mode", "copy")).strip().lower()
         style = str(payload.get("style", "AUTO")).upper()
         patch = payload.get("metadata", {})
         if not path:
             return self._json(400, {"error": "path is required"})
         if not os.path.exists(path):
             return self._json(400, {"error": "source path does not exist", "path": path})
+        if not os.path.isfile(path):
+            return self._json(400, {"error": "source path must be a file", "path": path})
         if style != "AUTO" and style not in STYLE_MAP:
             return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
+        if save_mode not in {"copy", "hardlink"}:
+            return self._json(400, {"error": "save_mode must be copy or hardlink", "save_mode": save_mode})
 
         target_path = write_path.strip() or path
         if write_path and not os.path.isabs(target_path):
             return self._json(400, {"error": "write_path must be an absolute path", "write_path": write_path})
+
+        write_target_path = target_path
         if target_path != path:
             target_dir = os.path.dirname(os.path.abspath(target_path))
             if target_dir and not os.path.exists(target_dir):
                 os.makedirs(target_dir, exist_ok=True)
-            shutil.copy2(path, target_path)
+            if save_mode == "copy":
+                if os.path.exists(target_path):
+                    if not os.path.samefile(path, target_path):
+                        os.remove(target_path)
+                if not os.path.exists(target_path):
+                    shutil.copy2(path, target_path)
+            else:
+                # hardlink mode writes metadata to source first, then creates hardlink alias
+                write_target_path = path
 
         try:
-            ca = ComicArchive(target_path, default_image_path=target_path)
+            ca = ComicArchive(write_target_path, default_image_path=write_target_path)
             detected_style = detect_style(ca)
             use_style = choose_style(style, detected_style)
             md = ca.readMetadata(STYLE_MAP[use_style])
@@ -4357,8 +4383,21 @@ class Handler(BaseHTTPRequestHandler):
             ok = ca.writeMetadata(md, STYLE_MAP[use_style])
             if not ok:
                 return self._json(500, {"ok": False, "error": "Metadata write returned false", "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
-            sidecar_path = write_sidecar_metadata(target_path, md, use_style)
-            return self._json(200, {"ok": True, "path": path, "written_path": target_path, "sidecar_path": sidecar_path, "style": use_style, "detected_style": detected_style})
+
+            final_written_path = write_target_path
+            if save_mode == "hardlink" and target_path != path:
+                try:
+                    if os.path.exists(target_path):
+                        if not os.path.samefile(write_target_path, target_path):
+                            os.remove(target_path)
+                    if not os.path.exists(target_path):
+                        os.link(write_target_path, target_path)
+                    final_written_path = target_path
+                except OSError as exc:
+                    return self._json(400, {"ok": False, "error": f"hardlink save failed: {exc}", "path": path, "written_path": target_path})
+
+            sidecar_path = write_sidecar_metadata(final_written_path, md, use_style)
+            return self._json(200, {"ok": True, "path": path, "written_path": final_written_path, "sidecar_path": sidecar_path, "style": use_style, "detected_style": detected_style, "save_mode": save_mode})
         except Exception as exc:
             return self._json(500, {"ok": False, "error": str(exc), "path": path, "written_path": target_path})
 
