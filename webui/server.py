@@ -1608,7 +1608,9 @@ INDEX_HTML = """<!doctype html>
       const parts = normalized.split('/').filter(Boolean);
       const base = parts.length ? parts[parts.length - 1] : '';
       if (base && base.toLowerCase() === picked.toLowerCase()) return normalized;
-      return normalized + '/' + picked;
+      if (!parts.length) return '/' + picked;
+      parts[parts.length - 1] = picked;
+      return '/' + parts.join('/');
     }
 
     function extractPickedFolderNameFromFiles(files) {

@@ -35,6 +35,8 @@ def test_index_html_has_library_picker_field_update_and_write_error_status():
     assert "current.replace(/\\\\/g, '/')" in html
     assert ".replace(/\\/+$/, '')" in html
     assert "if (base && base.toLowerCase() === picked.toLowerCase()) return normalized;" in html
+    assert "parts[parts.length - 1] = picked;" in html
+    assert "return '/' + parts.join('/')" in html
     assert "clearScanResults();" in html
     assert "id='rootPathPicker'" in html
     assert "function extractPickedFolderNameFromFiles(files)" in html
