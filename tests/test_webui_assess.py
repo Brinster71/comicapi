@@ -33,6 +33,7 @@ def test_index_html_has_library_picker_field_update_and_write_error_status():
     html = server.INDEX_HTML
     assert "function combinePickedFolderWithCurrentPath" in html
     assert "current.replace(/\\\\/g, '/')" in html
+    assert ".replace(/\\/+$/, '')" in html
     assert "if (base && base.toLowerCase() === picked.toLowerCase()) return normalized;" in html
     assert "clearScanResults();" in html
     assert "id='rootPathPicker'" in html
@@ -45,11 +46,15 @@ def test_index_html_has_library_picker_field_update_and_write_error_status():
     assert "id='pathPickOverlay'" in html
     assert "Folder picker timed out; enter absolute path manually" in html
     assert "async function browseLibraryPath()" in html
+    assert "window.showDirectoryPicker" in html
+    assert "browseDirectoryPathBrowser(previous)" in html
     assert "async function browseBulkLibraryPath()" in html
+    assert "Bulk folder selected in browser: " in html
     assert "const picked = await browseLibraryPathNative(previous);" in html
     assert "const picked = await browseBulkLibraryPathNative(previous);" in html
     assert "Folder picker unavailable:" in html
     assert "setStatus('Folder selected: ' + input.value + '. Click Scan.'" in html
+    assert "Folder selected in browser: " in html
     assert "try {" in html and "setStatus('Write failed: ' + (err && err.message ? err.message : 'request failed'), true);" in html
 
 

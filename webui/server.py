@@ -1586,7 +1586,7 @@ INDEX_HTML = """<!doctype html>
       const picked = String(pickedFolderName || '').trim();
       if (!picked) return current;
       if (!current) return '';
-      const normalized = current.replace(/\\\\/g, '/').replace(/\\/+$/, '');
+      const normalized = current.replace(/\\\\/g, '/').replace(/\/+$/, '');
       if (!normalized || !normalized.startsWith('/')) return '';
       const parts = normalized.split('/').filter(Boolean);
       const base = parts.length ? parts[parts.length - 1] : '';
@@ -1597,7 +1597,7 @@ INDEX_HTML = """<!doctype html>
     function extractPickedFolderNameFromFiles(files) {
       const pickedFiles = Array.isArray(files) ? files : [];
       if (!pickedFiles.length) return '';
-      const rel = String(pickedFiles[0].webkitRelativePath || pickedFiles[0].name || '').replace(/\\/g, '/');
+      const rel = String(pickedFiles[0].webkitRelativePath || pickedFiles[0].name || '').replace(/\\\\/g, '/');
       if (!rel) return '';
       const parts = rel.split('/').filter(Boolean);
       return parts.length ? parts[0] : '';
@@ -1655,6 +1655,27 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
+
+    async function browseDirectoryPathBrowser(previous) {
+      if (!window || typeof window.showDirectoryPicker !== 'function') {
+        return { path: '', folder: '', usedBrowserPicker: false, cancelled: false, error: 'Browser directory picker unavailable' };
+      }
+      try {
+        const suggested = String(previous || '').trim();
+        const opts = { mode: 'read' };
+        if (suggested) opts.startIn = 'documents';
+        const handle = await window.showDirectoryPicker(opts);
+        const folder = String((handle && handle.name) ? handle.name : '').trim();
+        return { path: '', folder: folder, usedBrowserPicker: true, cancelled: false, error: '' };
+      } catch (err) {
+        const name = err && err.name ? String(err.name) : '';
+        if (name === 'AbortError') {
+          return { path: '', folder: '', usedBrowserPicker: true, cancelled: true, error: '' };
+        }
+        return { path: '', folder: '', usedBrowserPicker: true, cancelled: false, error: (err && err.message) ? String(err.message) : 'Browser directory picker failed' };
+      }
+    }
+
     function clearScanResults() {
       const tbody = document.querySelector('#scanTable tbody');
       if (tbody) tbody.innerHTML = '';
@@ -1674,6 +1695,32 @@ INDEX_HTML = """<!doctype html>
       const btn = document.getElementById('browseLibraryBtn');
       const previous = (input.value || '').trim();
       clearScanResults();
+      if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
+      let browserPicked;
+      try {
+        setStatus('Opening browser folder picker…', false);
+        browserPicked = await browseDirectoryPathBrowser(previous);
+      } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('btn-busy'); btn.textContent = 'Browse…'; }
+      }
+      if (browserPicked && browserPicked.folder) {
+        const resolved = applyPickedFolderToInput(input, browserPicked.folder, previous);
+        if (resolved.startsWith('/')) {
+          input.value = resolved;
+          savePersistentFields();
+          setStatus('Folder selected: ' + resolved + '. Click Scan.', false);
+          return;
+        }
+        input.value = browserPicked.folder;
+        savePersistentFields();
+        setStatus('Folder selected in browser: ' + browserPicked.folder + '. Update to an absolute server path before Scan if needed.', true);
+        return;
+      }
+      if (browserPicked && browserPicked.cancelled) {
+        setStatus('Folder selection cancelled.', true);
+        return;
+      }
+
       setStatus('Opening folder picker — look for a dialog window on your desktop…', false);
       if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
       let picked;
@@ -1714,6 +1761,12 @@ INDEX_HTML = """<!doctype html>
           setStatus('Folder selected: ' + resolved + '. Click Scan.', false);
           return;
         }
+
+        input.value = pickedFolder;
+        clearScanResults();
+        savePersistentFields();
+        setStatus('Folder selected in browser: ' + pickedFolder + '. Update to an absolute server path before Scan if needed.', true);
+        return;
       }
 
       setStatus('Browser folder picker not available; trying native picker…', false);
@@ -1742,6 +1795,32 @@ INDEX_HTML = """<!doctype html>
       const input = document.getElementById('bulkRootPath');
       const btn = document.getElementById('browseBulkLibraryBtn');
       const previous = (input.value || '').trim();
+      if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
+      let browserPicked;
+      try {
+        setStatus('Opening browser folder picker…', false);
+        browserPicked = await browseDirectoryPathBrowser(previous);
+      } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('btn-busy'); btn.textContent = 'Browse…'; }
+      }
+      if (browserPicked && browserPicked.folder) {
+        const resolved = applyPickedFolderToInput(input, browserPicked.folder, previous);
+        if (resolved.startsWith('/')) {
+          input.value = resolved;
+          document.getElementById('bulkRootLabel').textContent = resolved || '(not set)';
+          setStatus('Bulk folder selected: ' + resolved + '. Click Scan batch.', false);
+          return;
+        }
+        input.value = browserPicked.folder;
+        document.getElementById('bulkRootLabel').textContent = browserPicked.folder || '(not set)';
+        setStatus('Bulk folder selected in browser: ' + browserPicked.folder + '. Update to an absolute server path before Scan batch if needed.', true);
+        return;
+      }
+      if (browserPicked && browserPicked.cancelled) {
+        setStatus('Bulk folder selection cancelled.', true);
+        return;
+      }
+
       setStatus('Opening bulk folder picker — look for a dialog window on your desktop…', false);
       if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
       let picked;
@@ -1781,6 +1860,11 @@ INDEX_HTML = """<!doctype html>
           setStatus('Bulk folder selected: ' + resolved + '. Click Scan batch.', false);
           return;
         }
+
+        input.value = pickedFolder;
+        document.getElementById('bulkRootLabel').textContent = pickedFolder || '(not set)';
+        setStatus('Bulk folder selected in browser: ' + pickedFolder + '. Update to an absolute server path before Scan batch if needed.', true);
+        return;
       }
 
       setStatus('Browser folder picker not available; trying native picker…', false);
@@ -2058,11 +2142,11 @@ INDEX_HTML = """<!doctype html>
       }).replace(/[\\\\/]+/g, '/').trim();
 
       const withExt = (!ext || /\.[A-Za-z0-9]+$/.test(replaced)) ? replaced : (replaced + ext);
-      const normalizedSource = String(sourcePath || '').replace(/\\/g, '/').trim();
+      const normalizedSource = String(sourcePath || '').replace(/\\\\/g, '/').trim();
       const sourceDir = normalizedSource.includes('/')
         ? normalizedSource.slice(0, normalizedSource.lastIndexOf('/'))
         : '';
-      const normalizedTarget = String(withExt || '').replace(/\\/g, '/').replace(/\/+$/, '');
+      const normalizedTarget = String(withExt || '').replace(/\\\\/g, '/').replace(/\/+$/, '');
       if (!normalizedTarget) return '';
 
       // Keep absolute paths as-is (Unix, UNC, or Windows drive paths).
