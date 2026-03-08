@@ -1036,6 +1036,23 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
+
+    function isAbsolutePath(path) {
+      const p = String(path || '').trim();
+      return /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(p);
+    }
+
+    function normalizeSlashPath(path) {
+      return String(path || '').trim().replace(/\\\\/g, '/');
+    }
+
+    function combinePath(baseDir, childPath) {
+      const base = normalizeSlashPath(baseDir).replace(/\/+$/, '');
+      const child = normalizeSlashPath(childPath).replace(/^\/+/, '');
+      if (!base) return child;
+      return (base + '/' + child).replace(/\/+/g, '/');
+    }
+
     function setComicPathValue(path) {
       document.getElementById('comicPath').value = path || '';
       maybeSyncWritePath(true);
@@ -2418,15 +2435,38 @@ INDEX_HTML = """<!doctype html>
     }
 
     async function writeFromJsonPayload(payload) {
-      const path = document.getElementById('comicPath').value.trim();
-      const writePath = (document.getElementById('writePath').value || '').trim();
+      const rawPath = document.getElementById('comicPath').value.trim();
+      const rawWritePath = (document.getElementById('writePath').value || '').trim();
+      const rootPath = (document.getElementById('rootPath').value || '').trim();
       const style = document.getElementById('style').value;
-      if (!path) return alert('Select or enter a comic file path first.');
+      if (!rawPath) return alert('Select or enter a comic file path first.');
+
+      let path = rawPath;
+      if (!isAbsolutePath(path) && isAbsolutePath(rootPath)) {
+        path = combinePath(rootPath, path);
+      }
+      if (!isAbsolutePath(path)) {
+        setStatus('Write failed: selected file path must be absolute on the server. Set Library path and reselect, or enter absolute path manually.', true);
+        return;
+      }
+
+      let writePath = rawWritePath;
+      if (writePath && !isAbsolutePath(writePath)) {
+        const sourceDir = normalizeSlashPath(path).replace(/\/[^/]*$/, '');
+        writePath = combinePath(sourceDir, writePath);
+      }
+
       const patch = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : payload;
       setStatus('Writing metadata to file…', false);
       try {
+        document.getElementById('comicPath').value = path;
+        if (writePath) document.getElementById('writePath').value = writePath;
         const singleNaming = namingState('single');
-        const namingTarget = buildSingleNamingWriteTarget(path);
+        let namingTarget = buildSingleNamingWriteTarget(path);
+        if (namingTarget && !isAbsolutePath(namingTarget)) {
+          const sourceDir = normalizeSlashPath(path).replace(/\/[^/]*$/, '');
+          namingTarget = combinePath(sourceDir, namingTarget);
+        }
         const primaryTarget = (singleNaming.apply && singleNaming.override && namingTarget)
           ? namingTarget
           : (writePath || '');

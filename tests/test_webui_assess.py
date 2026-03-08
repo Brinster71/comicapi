@@ -59,6 +59,9 @@ def test_index_html_has_library_picker_field_update_and_write_error_status():
     assert "id='singleNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...'" in html
     assert "id='singleNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...' readonly" not in html
     assert "const preview = (document.getElementById('singleNamingPreview').value || '').trim();" in html
+    assert "function isAbsolutePath(path)" in html
+    assert "path = combinePath(rootPath, path);" in html
+    assert "selected file path must be absolute on the server" in html
     assert "try {" in html and "setStatus('Write failed: ' + (err && err.message ? err.message : 'request failed'), true);" in html
 
 
