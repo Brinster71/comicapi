@@ -1672,8 +1672,16 @@ INDEX_HTML = """<!doctype html>
     async function browseLibraryPath() {
       const input = document.getElementById('rootPath');
       const btn = document.getElementById('browseLibraryBtn');
+      const picker = document.getElementById('rootPathPicker');
       const previous = (input.value || '').trim();
       clearScanResults();
+      if (picker && typeof picker.click === 'function') {
+        picker.value = '';
+        setStatus('Opening browser folder picker…', false);
+        picker.click();
+        return;
+      }
+
       setStatus('Opening folder picker — look for a dialog window on your desktop…', false);
       if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
       let picked;
@@ -1741,7 +1749,15 @@ INDEX_HTML = """<!doctype html>
     async function browseBulkLibraryPath() {
       const input = document.getElementById('bulkRootPath');
       const btn = document.getElementById('browseBulkLibraryBtn');
+      const picker = document.getElementById('bulkRootPathPicker');
       const previous = (input.value || '').trim();
+      if (picker && typeof picker.click === 'function') {
+        picker.value = '';
+        setStatus('Opening browser folder picker…', false);
+        picker.click();
+        return;
+      }
+
       setStatus('Opening bulk folder picker — look for a dialog window on your desktop…', false);
       if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
       let picked;
