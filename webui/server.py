@@ -1722,6 +1722,12 @@ INDEX_HTML = """<!doctype html>
           setStatus('Folder selected: ' + resolved + '. Click Scan.', false);
           return;
         }
+
+        input.value = pickedFolder;
+        clearScanResults();
+        savePersistentFields();
+        setStatus('Folder selected in browser: ' + pickedFolder + '. Update to an absolute server path before Scan if needed.', true);
+        return;
       }
 
       setStatus('Browser folder picker not available; trying native picker…', false);
@@ -1797,6 +1803,11 @@ INDEX_HTML = """<!doctype html>
           setStatus('Bulk folder selected: ' + resolved + '. Click Scan batch.', false);
           return;
         }
+
+        input.value = pickedFolder;
+        document.getElementById('bulkRootLabel').textContent = pickedFolder || '(not set)';
+        setStatus('Bulk folder selected in browser: ' + pickedFolder + '. Update to an absolute server path before Scan batch if needed.', true);
+        return;
       }
 
       setStatus('Browser folder picker not available; trying native picker…', false);
