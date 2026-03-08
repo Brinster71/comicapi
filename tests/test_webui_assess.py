@@ -33,23 +33,23 @@ def test_index_html_has_library_picker_field_update_and_write_error_status():
     html = server.INDEX_HTML
     assert "function combinePickedFolderWithCurrentPath" in html
     assert "current.replace(/\\\\/g, '/')" in html
+    assert ".replace(/\\/+$/, '')" in html
     assert "if (base && base.toLowerCase() === picked.toLowerCase()) return normalized;" in html
+    assert "parts[parts.length - 1] = picked;" in html
+    assert "return '/' + parts.join('/')" in html
     assert "clearScanResults();" in html
-    assert "id='rootPathPicker'" in html
+    assert "browse buttons removed" in html
+    assert "id='rootPathPicker'" not in html
     assert "function extractPickedFolderNameFromFiles(files)" in html
-    assert "async function browseLibraryPathNative(previous)" in html
-    assert "fetch('/api/pick_directory?current=' + encodeURIComponent(prior || ''), { signal: controller.signal })" in html
-    assert "const controller = new AbortController();" in html
-    assert "setTimeout(() => controller.abort(), 25000);" in html
     assert "showInlinePathEntry(" in html
     assert "id='pathPickOverlay'" in html
-    assert "Folder picker timed out; enter absolute path manually" in html
-    assert "async function browseLibraryPath()" in html
-    assert "async function browseBulkLibraryPath()" in html
-    assert "const picked = await browseLibraryPathNative(previous);" in html
-    assert "const picked = await browseBulkLibraryPathNative(previous);" in html
-    assert "Folder picker unavailable:" in html
-    assert "setStatus('Folder selected: ' + input.value + '. Click Scan.'" in html
+    assert "Names with spaces also work (e.g. {Start Year})" in html
+    assert "id='singleNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...'" in html
+    assert "id='singleNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...' readonly" not in html
+    assert "const preview = (document.getElementById('singleNamingPreview').value || '').trim();" in html
+    assert "function isAbsolutePath(path)" in html
+    assert "path = combinePath(rootPath, path);" in html
+    assert "selected file path must be absolute on the server" in html
     assert "try {" in html and "setStatus('Write failed: ' + (err && err.message ? err.message : 'request failed'), true);" in html
 
 
@@ -59,13 +59,14 @@ def test_index_html_has_diagnostics_and_write_browse_hooks():
     assert "id='diagBanner'" in html
     assert "async function loadRuntimeDiagnostics()" in html
     assert "fetch('/api/version')" in html
-    assert "function browseWritePath()" in html
+    assert "onclick='browseWritePath()'" not in html
     assert "function onWriteFilePicked(evt)" in html
     assert "setStatus('Scanning library…', false);" in html
     assert "setStatus('Scan failed: ' + (data.error || ('HTTP ' + res.status)), true);" in html
     assert "function buildComicVineQueryFromAssessment(data)" in html
     assert "const parts = [series, issue, title].filter(Boolean);" in html
     assert "const autoQuery = buildComicVineQueryFromAssessment(data);" in html
+    assert "sidecar_path" in html
     assert "cvQuery.value = autoQuery;" in html
 
 
