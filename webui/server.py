@@ -1655,6 +1655,27 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
+
+    async function browseDirectoryPathBrowser(previous) {
+      if (!window || typeof window.showDirectoryPicker !== 'function') {
+        return { path: '', folder: '', usedBrowserPicker: false, cancelled: false, error: 'Browser directory picker unavailable' };
+      }
+      try {
+        const suggested = String(previous || '').trim();
+        const opts = { mode: 'read' };
+        if (suggested) opts.startIn = 'documents';
+        const handle = await window.showDirectoryPicker(opts);
+        const folder = String((handle && handle.name) ? handle.name : '').trim();
+        return { path: '', folder: folder, usedBrowserPicker: true, cancelled: false, error: '' };
+      } catch (err) {
+        const name = err && err.name ? String(err.name) : '';
+        if (name === 'AbortError') {
+          return { path: '', folder: '', usedBrowserPicker: true, cancelled: true, error: '' };
+        }
+        return { path: '', folder: '', usedBrowserPicker: true, cancelled: false, error: (err && err.message) ? String(err.message) : 'Browser directory picker failed' };
+      }
+    }
+
     function clearScanResults() {
       const tbody = document.querySelector('#scanTable tbody');
       if (tbody) tbody.innerHTML = '';
@@ -1675,10 +1696,29 @@ INDEX_HTML = """<!doctype html>
       const picker = document.getElementById('rootPathPicker');
       const previous = (input.value || '').trim();
       clearScanResults();
-      if (picker && typeof picker.click === 'function') {
-        picker.value = '';
+      if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
+      let browserPicked;
+      try {
         setStatus('Opening browser folder picker…', false);
-        picker.click();
+        browserPicked = await browseDirectoryPathBrowser(previous);
+      } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('btn-busy'); btn.textContent = 'Browse…'; }
+      }
+      if (browserPicked && browserPicked.folder) {
+        const resolved = applyPickedFolderToInput(input, browserPicked.folder, previous);
+        if (resolved.startsWith('/')) {
+          input.value = resolved;
+          savePersistentFields();
+          setStatus('Folder selected: ' + resolved + '. Click Scan.', false);
+          return;
+        }
+        input.value = browserPicked.folder;
+        savePersistentFields();
+        setStatus('Folder selected in browser: ' + browserPicked.folder + '. Update to an absolute server path before Scan if needed.', true);
+        return;
+      }
+      if (browserPicked && browserPicked.cancelled) {
+        setStatus('Folder selection cancelled.', true);
         return;
       }
 
@@ -1757,10 +1797,29 @@ INDEX_HTML = """<!doctype html>
       const btn = document.getElementById('browseBulkLibraryBtn');
       const picker = document.getElementById('bulkRootPathPicker');
       const previous = (input.value || '').trim();
-      if (picker && typeof picker.click === 'function') {
-        picker.value = '';
+      if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
+      let browserPicked;
+      try {
         setStatus('Opening browser folder picker…', false);
-        picker.click();
+        browserPicked = await browseDirectoryPathBrowser(previous);
+      } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('btn-busy'); btn.textContent = 'Browse…'; }
+      }
+      if (browserPicked && browserPicked.folder) {
+        const resolved = applyPickedFolderToInput(input, browserPicked.folder, previous);
+        if (resolved.startsWith('/')) {
+          input.value = resolved;
+          document.getElementById('bulkRootLabel').textContent = resolved || '(not set)';
+          setStatus('Bulk folder selected: ' + resolved + '. Click Scan batch.', false);
+          return;
+        }
+        input.value = browserPicked.folder;
+        document.getElementById('bulkRootLabel').textContent = browserPicked.folder || '(not set)';
+        setStatus('Bulk folder selected in browser: ' + browserPicked.folder + '. Update to an absolute server path before Scan batch if needed.', true);
+        return;
+      }
+      if (browserPicked && browserPicked.cancelled) {
+        setStatus('Bulk folder selection cancelled.', true);
         return;
       }
 

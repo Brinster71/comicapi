@@ -46,6 +46,8 @@ def test_index_html_has_library_picker_field_update_and_write_error_status():
     assert "id='pathPickOverlay'" in html
     assert "Folder picker timed out; enter absolute path manually" in html
     assert "async function browseLibraryPath()" in html
+    assert "window.showDirectoryPicker" in html
+    assert "browseDirectoryPathBrowser(previous)" in html
     assert "async function browseBulkLibraryPath()" in html
     assert "Bulk folder selected in browser: " in html
     assert "const picked = await browseLibraryPathNative(previous);" in html
