@@ -11,6 +11,9 @@ from urllib.parse import parse_qs, urlparse
 
 from .comicvine import ComicVineClient
 from ..comicarchive import ComicArchive, MetaDataStyle
+from ..comicinfoxml import ComicInfoXml
+from ..comicbookinfo import ComicBookInfo
+from ..comet import CoMet
 
 INDEX_HTML = """<!doctype html>
 <html>
@@ -610,10 +613,9 @@ INDEX_HTML = """<!doctype html>
   <div class='row'>
     <label>Library path:</label>
     <input id='rootPath' type='text' placeholder='/path/to/comics'>
-    <button id='browseLibraryBtn' onclick='browseLibraryPath()'>Browse…</button>
-    <input id='rootPathPicker' type='file' webkitdirectory directory style='display:none' onchange='onLibraryFolderPicked(event)'>
     <button onclick='scanLibrary()'>Scan</button>
   </div>
+  <div class='muted small'>Enter server paths manually (browse buttons removed to avoid browser path-picker issues).</div>
 
   <div class='row'>
     <label class='stacked-checkbox'><input id='scanRecursive' type='checkbox' checked><span class='stacked-text'><span>Recurse</span><span>over subfolders</span></span></label>
@@ -622,12 +624,8 @@ INDEX_HTML = """<!doctype html>
   <div class='row'>
     <label>Selected file:</label>
     <input id='comicPath' type='text' placeholder='/path/to/file.cbz'>
-    <button onclick='browseComicFile()'>Browse…</button>
-    <input id='comicPathPicker' type='file' accept='.cbz,.cbr,.cbt,.pdf,.zip,.rar' style='display:none' onchange='onComicFilePicked(event)'>
     <label>Write to:</label>
     <input id='writePath' type='text' placeholder='/path/to/output.cbz (defaults to selected file)'>
-    <button onclick='browseWritePath()'>Browse…</button>
-    <input id='writePathPicker' type='file' accept='.cbz,.cbr,.cbt,.pdf,.zip,.rar,.json' style='display:none' onchange='onWriteFilePicked(event)'>
     <button onclick='setWritePathFromSelected()'>Use selected file</button>
     <label>Style:</label>
     <select id='style' class='tight'>
@@ -871,8 +869,6 @@ INDEX_HTML = """<!doctype html>
         <div class='row bulk-search-row'>
           <label>Library path:</label>
           <input id='bulkRootPath' type='text' placeholder='/path/to/comics'>
-          <button id='browseBulkLibraryBtn' onclick='browseBulkLibraryPath()'>Browse…</button>
-          <input id='bulkRootPathPicker' type='file' webkitdirectory directory style='display:none' onchange='onBulkLibraryFolderPicked(event)'>
           <button onclick='copySinglePathToBulk()'>Use single path</button>
           <label class='stacked-checkbox'><input id='bulkScanRecursive' type='checkbox' checked><span class='stacked-text'><span>Recurse</span><span>over subfolders</span></span></label>
           <button onclick='bulkScanFromRoot()'>Scan batch</button>
@@ -2499,11 +2495,13 @@ INDEX_HTML = """<!doctype html>
             setStatus('Primary write succeeded, naming mirror failed: ' + (mirror.out.error || ('HTTP ' + mirror.res.status)), true);
             return;
           }
-          setStatus('Metadata written to primary and naming target: ' + firstPath + ' ; ' + (mirror.out.written_path || namingTarget), false);
+          const sidecarMirror = mirror.out.sidecar_path ? (' ; sidecar: ' + mirror.out.sidecar_path) : '';
+          setStatus('Metadata written to primary and naming target: ' + firstPath + ' ; ' + (mirror.out.written_path || namingTarget) + sidecarMirror, false);
           return;
         }
 
-        setStatus('Metadata written to: ' + firstPath, false);
+        const sidecarNote = first.out.sidecar_path ? (' (sidecar: ' + first.out.sidecar_path + ')') : '';
+        setStatus('Metadata written to: ' + firstPath + sidecarNote, false);
       } catch (err) {
         setStatus('Write failed: ' + (err && err.message ? err.message : 'request failed'), true);
       }
@@ -3719,6 +3717,25 @@ INDEX_HTML = """<!doctype html>
 STYLE_MAP = {"CBI": MetaDataStyle.CBI, "CIX": MetaDataStyle.CIX, "COMET": MetaDataStyle.COMET}
 
 
+def write_sidecar_metadata(target_path, md, style_name):
+    base = str(target_path or "").strip()
+    if not base:
+        return None
+    sidecar = ""
+    if style_name == "CIX":
+        sidecar = base + ".ComicInfo.xml"
+        ComicInfoXml().writeToExternalFile(sidecar, md)
+    elif style_name == "CBI":
+        sidecar = base + ".ComicBookInfo.json"
+        ComicBookInfo().writeToExternalFile(sidecar, md)
+    elif style_name == "COMET":
+        sidecar = base + ".CoMet.xml"
+        CoMet().writeToExternalFile(sidecar, md)
+    else:
+        return None
+    return sidecar
+
+
 @dataclass
 class ComicSummary:
     path: str
@@ -4340,7 +4357,8 @@ class Handler(BaseHTTPRequestHandler):
             ok = ca.writeMetadata(md, STYLE_MAP[use_style])
             if not ok:
                 return self._json(500, {"ok": False, "error": "Metadata write returned false", "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
-            return self._json(200, {"ok": True, "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
+            sidecar_path = write_sidecar_metadata(target_path, md, use_style)
+            return self._json(200, {"ok": True, "path": path, "written_path": target_path, "sidecar_path": sidecar_path, "style": use_style, "detected_style": detected_style})
         except Exception as exc:
             return self._json(500, {"ok": False, "error": str(exc), "path": path, "written_path": target_path})
 
