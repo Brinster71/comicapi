@@ -421,6 +421,12 @@ INDEX_HTML = """<!doctype html>
       color: var(--muted);
       margin-top: .35rem;
     }
+    .bulk-sort-btn { background:none; border:none; color:inherit; font:inherit; font-weight:700; cursor:pointer; padding:0; }
+    .bulk-sort-btn:hover { text-decoration:underline; }
+    .bulk-record-bank { border:1px solid var(--line); border-radius:.8rem; background:rgba(255,255,255,.58); padding:.45rem; margin-top:.5rem; max-height:34vh; overflow:auto; }
+    .bulk-record-item { border:1px solid var(--line); border-radius:.55rem; padding:.35rem .45rem; margin-bottom:.35rem; background:rgba(255,255,255,.82); cursor:grab; }
+    .bulk-record-item:last-child { margin-bottom:0; }
+    .bulk-record-item small { display:block; color:var(--muted); }
     .naming-toolbar {
       display:flex;
       justify-content:space-between;
@@ -861,6 +867,11 @@ INDEX_HTML = """<!doctype html>
         </div>
         <div class='row'>
           <label><input type='checkbox' id='bulkRulePublisher' checked> Auto-fill publisher/date/volume on high confidence</label>
+        </div>
+        <h5 style='margin:.6rem 0 .35rem;'>ComicVine metadata records</h5>
+        <div class='small muted'>Drag a record onto a file row to apply that full record's metadata.</div>
+        <div id='bulkRecordBank' class='bulk-record-bank'>
+          <div id='bulkRecordList' class='small muted'>Search/select a ComicVine series and issues to load draggable records.</div>
         </div>
       </aside>
 
@@ -2676,6 +2687,7 @@ INDEX_HTML = """<!doctype html>
         seriesSel.appendChild(opt);
       });
       setBulkCvHint('Series loaded. Batch apply maps each row by its issue number; selected issue is fallback only.');
+      renderBulkRecordBank();
       onBulkCvSeriesSelected();
     }
 
@@ -2737,6 +2749,7 @@ INDEX_HTML = """<!doctype html>
       appState.bulkCvIssues = issues;
       if (!issues.length) {
         setBulkCvHint('No issues found for selected series.');
+        renderBulkRecordBank();
         return;
       }
 
@@ -2844,6 +2857,34 @@ INDEX_HTML = """<!doctype html>
       return out;
     }
 
+
+    function renderBulkRecordBank() {
+      const holder = document.getElementById('bulkRecordList');
+      if (!holder) return;
+      const issues = appState.bulkCvIssues || [];
+      if (!issues.length) {
+        holder.innerHTML = "<span class='small muted'>Search/select a ComicVine series and issues to load draggable records.</span>";
+        return;
+      }
+      holder.innerHTML = '';
+      issues.forEach((issue) => {
+        const title = issue.name || issue.title || '(untitled)';
+        const issueNum = issue.issue_number || '?';
+        const coverDate = String(issue.cover_date || '').trim();
+        const item = document.createElement('div');
+        item.className = 'bulk-record-item';
+        item.setAttribute('draggable', 'true');
+        item.innerHTML = `<b>#${issueNum}</b> ${title}<small>${coverDate || 'no cover date'} • id ${issue.id || ''}</small>`;
+        item.ondragstart = (ev) => {
+          if (ev.dataTransfer) {
+            ev.dataTransfer.effectAllowed = 'copy';
+            ev.dataTransfer.setData('text/plain', 'cvrecord:' + String(issue.id || ''));
+          }
+        };
+        holder.appendChild(item);
+      });
+    }
+
     function bulkResolveIssueForRow(row, issues, fallbackIssue) {
       const token = normalizeIssue(
         row.issue ||
@@ -2873,6 +2914,7 @@ INDEX_HTML = """<!doctype html>
 
       applyComicVineIssueToBulkRow(row, issue);
       renderBulkQueue();
+      renderBulkRecordBank();
       setStatus('Applied ComicVine selection to selected bulk row.', false);
     }
 
@@ -2917,6 +2959,7 @@ INDEX_HTML = """<!doctype html>
       });
 
       renderBulkQueue();
+      renderBulkRecordBank();
       const suffix = scope === 'visible' ? 'visible' : (scope === 'active' ? 'active' : 'checked');
       if (!changed) {
         setStatus('Batch apply could not map any ' + suffix + ' rows to ComicVine issues.', true);
@@ -3291,7 +3334,17 @@ INDEX_HTML = """<!doctype html>
         tr.ondrop = ev => {
           ev.preventDefault();
           tr.classList.remove('drop-target');
-          const dragId = appState.bulkDragId != null ? appState.bulkDragId : (ev.dataTransfer ? ev.dataTransfer.getData('text/plain') : '');
+          const payload = ev.dataTransfer ? String(ev.dataTransfer.getData('text/plain') || '') : '';
+          if (payload.startsWith('cvrecord:')) {
+            const issueId = payload.slice('cvrecord:'.length);
+            const issue = (appState.bulkCvIssues || []).find(i => String(i.id || '') === String(issueId));
+            if (issue && applyComicVineIssueToBulkRow(r, issue)) {
+              renderBulkQueue();
+              setStatus('Applied ComicVine record #' + String(issue.issue_number || '?') + ' to row: ' + (r.path || r.id), false);
+            }
+            return;
+          }
+          const dragId = appState.bulkDragId != null ? appState.bulkDragId : payload;
           bulkMoveRow(dragId, r.id);
         };
 
@@ -3393,6 +3446,7 @@ INDEX_HTML = """<!doctype html>
       renderBulkAppliedReadable(r);
       syncBulkEditorFromSelection();
       syncBulkSearchFromSelection();
+      renderBulkRecordBank();
     }
 
     function renderBulkAppliedReadable(row) {
@@ -3651,6 +3705,7 @@ INDEX_HTML = """<!doctype html>
         await bulkEnrichRowsFromMetadata(appState.bulkRows);
         bulkSortCurrentRows(false);
         syncBulkSearchFromSelection();
+        renderBulkRecordBank();
         setStatus('Bulk scan complete: ' + String(data.count || 0) + ' files.', false);
       } catch (err) {
         appState.bulkRows = [];
@@ -3827,6 +3882,7 @@ INDEX_HTML = """<!doctype html>
       });
     }
     syncBulkSearchFromSelection();
+    renderBulkRecordBank();
     setBulkGapVisibility(false);
     renderBulkFieldGap(null);
     switchTab(localStorage.getItem('comicapi.activeTab') === 'bulk' ? 'bulk' : 'single');

@@ -118,6 +118,10 @@ def test_index_html_has_bulk_apply_sort_and_drag_controls():
     assert "function renderBulkFieldGap(row)" in html
     assert "issueName: row.issueName" in html
     assert "comicVineIssueId: row.comicVineIssueId" in html
+    assert "id='bulkRecordBank'" in html
+    assert "id='bulkRecordList'" in html
+    assert "function renderBulkRecordBank()" in html
+    assert "cvrecord:" in html
 
 
 def test_index_html_has_naming_and_recursive_scan_controls():
