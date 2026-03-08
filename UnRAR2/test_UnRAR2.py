@@ -5,6 +5,21 @@ import pytest
 if shutil.which("unrar") is None and shutil.which("rar") is None:
     pytest.skip("Skipping UnRAR2 integration tests: unrar/rar executable not installed", allow_module_level=True)
 
+REQUIRED_ARCHIVES = [
+    "test.rar",
+    "test_nulls.rar",
+    "test_protected_files.rar",
+    "test_protected_headers.rar",
+]
+missing_archives = [name for name in REQUIRED_ARCHIVES if not os.path.exists(os.path.join(os.path.dirname(__file__), name))]
+if missing_archives:
+    pytest.skip(
+        "Skipping UnRAR2 integration tests: missing fixture archives ("
+        + ", ".join(missing_archives)
+        + ")",
+        allow_module_level=True,
+    )
+
 UnRAR2 = sys.modules[__package__]
 from .rar_exceptions import *
 

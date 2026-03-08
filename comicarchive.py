@@ -40,7 +40,7 @@ try:
     from unrar import unrarlib
     from unrar import constants
     import unrar.constants
-except ImportError:
+except Exception:
     rarfile = None
     unrarlib = None
     constants = None
@@ -302,9 +302,30 @@ class ZipArchiver:
 class RarArchiver:
 
     devnull = None
+
+    @staticmethod
+    def find7zCmd():
+        for candidate in ("7z", "7za"):
+            cmd = shutil.which(candidate)
+            if cmd:
+                return cmd
+        return None
+
+    @staticmethod
+    def findUnrarCmd():
+        for candidate in ("unrar", "rar"):
+            cmd = shutil.which(candidate)
+            if cmd:
+                return cmd
+        return None
+
     def __init__( self, path, rar_exe_path ):
         self.path = path
         self.rar_exe_path = rar_exe_path
+        self.unrar_cmd = self.findUnrarCmd()
+        self.seven_zip_cmd = self.find7zCmd()
+        self.use_unrar_fallback = OpenableRarFile is None and self.unrar_cmd is not None
+        self.use_7z_fallback = OpenableRarFile is None and not self.use_unrar_fallback and self.seven_zip_cmd is not None
 
         if RarArchiver.devnull is None:
             RarArchiver.devnull = open(os.devnull, "w")
@@ -322,10 +343,22 @@ class RarArchiver:
 
     def getArchiveComment( self ):
 
+        if self.use_unrar_fallback:
+            return ""
+
+        if self.use_7z_fallback:
+            return ""
+
         rarc = self.getRARObj()
         return rarc.comment
 
     def setArchiveComment( self, comment ):
+
+        if self.use_unrar_fallback:
+            return False
+
+        if self.use_7z_fallback:
+            return False
 
         if self.rar_exe_path is not None:
             try:
@@ -354,6 +387,36 @@ class RarArchiver:
             return False
 
     def readArchiveFile( self, archive_file ):
+
+        if self.use_unrar_fallback:
+            tries = 0
+            while tries < 3:
+                try:
+                    tries = tries + 1
+                    data = subprocess.check_output(
+                        [self.unrar_cmd, 'p', '-inul', '-p-', self.path, archive_file],
+                        stderr=RarArchiver.devnull,
+                    )
+                    return data
+                except Exception as e:
+                    print("readArchiveFile(unrar): [{0}]  {1}:{2} attempt#{3}".format(str(e), self.path, archive_file, tries), file=sys.stderr)
+                    time.sleep(1)
+            raise IOError
+
+        if self.use_7z_fallback:
+            tries = 0
+            while tries < 3:
+                try:
+                    tries = tries + 1
+                    data = subprocess.check_output(
+                        [self.seven_zip_cmd, 'x', '-so', '--', self.path, archive_file],
+                        stderr=RarArchiver.devnull,
+                    )
+                    return data
+                except Exception as e:
+                    print("readArchiveFile(7z): [{0}]  {1}:{2} attempt#{3}".format(str(e), self.path, archive_file, tries), file=sys.stderr)
+                    time.sleep(1)
+            raise IOError
 
         # Make sure to escape brackets, since some funky stuff is going on
         # underneath with "fnmatch"
@@ -406,6 +469,12 @@ class RarArchiver:
 
     def writeArchiveFile( self, archive_file, data ):
 
+        if self.use_unrar_fallback:
+            return False
+
+        if self.use_7z_fallback:
+            return False
+
         if self.rar_exe_path is not None:
             try:
                 tmp_folder = tempfile.mkdtemp()
@@ -437,6 +506,12 @@ class RarArchiver:
             return False
 
     def removeArchiveFile( self, archive_file ):
+        if self.use_unrar_fallback:
+            return False
+
+        if self.use_7z_fallback:
+            return False
+
         if self.rar_exe_path is not None:
             try:
                 # use external program to remove file from Rar archive
@@ -454,6 +529,109 @@ class RarArchiver:
             return False
 
     def getArchiveFilenameList( self ):
+
+        if self.use_unrar_fallback:
+            tries = 0
+            last_error = None
+            while tries < 3:
+                try:
+                    tries = tries + 1
+                    proc = subprocess.run(
+                        [self.unrar_cmd, 'lb', '-p-', self.path],
+                        stdout=subprocess.PIPE,
+                        stderr=RarArchiver.devnull,
+                        text=True,
+                        encoding='utf-8',
+                        errors='replace',
+                        check=True,
+                    )
+                    namelist = []
+                    for line in proc.stdout.splitlines():
+                        item = line.strip()
+                        if not item:
+                            continue
+                        if item.endswith('/'):
+                            continue
+                        namelist.append(item)
+                    return namelist
+                except Exception as e:
+                    last_error = e
+                    print("getArchiveFilenameList(unrar): [{0}] {1} attempt#{2}".format(str(e), self.path, tries), file=sys.stderr)
+                    time.sleep(1)
+
+            if last_error is not None:
+                raise last_error
+            raise IOError("Unable to get archive filename list: {0}".format(self.path))
+
+        if self.use_7z_fallback:
+            tries = 0
+            last_error = None
+            while tries < 3:
+                try:
+                    tries = tries + 1
+                    proc = subprocess.run(
+                        [self.seven_zip_cmd, 'l', '-slt', '--', self.path],
+                        stdout=subprocess.PIPE,
+                        stderr=RarArchiver.devnull,
+                        text=True,
+                        encoding='utf-8',
+                        errors='replace',
+                        check=True,
+                    )
+
+                    namelist = []
+                    current_path = None
+                    current_size = None
+                    current_attr = ""
+
+                    def flush_current():
+                        nonlocal current_path, current_size, current_attr
+                        if current_path is None:
+                            return
+                        is_dir = 'D' in current_attr
+                        if not is_dir:
+                            try:
+                                size_val = int(current_size) if current_size is not None else 0
+                            except Exception:
+                                size_val = 0
+                            if size_val != 0 or str(current_path).lower().endswith('.xml'):
+                                namelist.append(current_path)
+                        current_path = None
+                        current_size = None
+                        current_attr = ""
+
+                    for line in proc.stdout.splitlines():
+                        text = line.strip()
+                        if text == "":
+                            flush_current()
+                            continue
+                        if " = " not in text:
+                            continue
+                        key, value = text.split(" = ", 1)
+                        key = key.strip()
+                        value = value.strip()
+                        if key == "Path":
+                            if value == self.path:
+                                continue
+                            if current_path is not None:
+                                flush_current()
+                            current_path = value
+                        elif key == "Size":
+                            current_size = value
+                        elif key == "Attributes":
+                            current_attr = value
+
+                    flush_current()
+                    return namelist
+
+                except Exception as e:
+                    last_error = e
+                    print("getArchiveFilenameList(7z): [{0}] {1} attempt#{2}".format(str(e), self.path, tries), file=sys.stderr)
+                    time.sleep(1)
+
+            if last_error is not None:
+                raise last_error
+            raise IOError("Unable to get archive filename list: {0}".format(self.path))
 
         rarc = self.getRARObj()
         #namelist = [ item.filename for item in rarc.infolist() ]
@@ -485,6 +663,9 @@ class RarArchiver:
 
 
     def getRARObj( self ):
+        if self.use_7z_fallback:
+            raise IOError("RAR object backend not available when using 7z fallback")
+
         tries = 0
         last_error = None
         while tries < 7:
@@ -688,14 +869,36 @@ class ComicArchive:
         return zipfile.is_zipfile( self.path )
 
     def rarTest( self ):
-        if rarfile is None:
+        if rarfile is not None:
+            try:
+                rarfile.RarFile( self.path )
+            except Exception:
+                pass
+            else:
+                return True
+
+        unrar_cmd = RarArchiver.findUnrarCmd()
+        if unrar_cmd is not None:
+            try:
+                proc = subprocess.run(
+                    [unrar_cmd, 'lb', '-p-', self.path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=20,
+                )
+                if proc.returncode == 0:
+                    return True
+            except Exception:
+                pass
+
+        cmd = RarArchiver.find7zCmd()
+        if cmd is None:
             return False
         try:
-            rarfile.RarFile( self.path )
+            sig = subprocess.check_output([cmd, 'l', '-slt', '--', self.path], stderr=subprocess.STDOUT, timeout=20)
+            return b'Type = Rar' in sig or b'Type = RAR' in sig
         except Exception:
             return False
-        else:
-            return True
 
 
     def isZip( self ):
