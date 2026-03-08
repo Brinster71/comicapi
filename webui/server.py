@@ -1708,6 +1708,7 @@ INDEX_HTML = """<!doctype html>
     async function browseLibraryPath() {
       const input = document.getElementById('rootPath');
       const btn = document.getElementById('browseLibraryBtn');
+      const picker = document.getElementById('rootPathPicker');
       const previous = (input.value || '').trim();
       clearScanResults();
       if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
@@ -1809,6 +1810,7 @@ INDEX_HTML = """<!doctype html>
     async function browseBulkLibraryPath() {
       const input = document.getElementById('bulkRootPath');
       const btn = document.getElementById('browseBulkLibraryBtn');
+      const picker = document.getElementById('bulkRootPathPicker');
       const previous = (input.value || '').trim();
       if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
       let browserPicked;
