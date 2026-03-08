@@ -40,7 +40,7 @@ INDEX_HTML = """<!doctype html>
         radial-gradient(circle at bottom right, rgba(251,191,36,.28), transparent 30%),
         radial-gradient(circle at 80% 20%, rgba(253,224,71,.22), transparent 22%),
         linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 52%, var(--bg3) 100%);
-      overflow-x: hidden;
+      overflow-x: auto;
     }
     .page {
       max-width: var(--max);
@@ -162,6 +162,10 @@ INDEX_HTML = """<!doctype html>
       width: 100%;
       margin-top: .5rem;
       background: transparent;
+    }
+    .table-scroll {
+      width: 100%;
+      overflow-x: auto;
     }
     th, td {
       border: none;
@@ -846,12 +850,12 @@ INDEX_HTML = """<!doctype html>
       <section id='bulkPreviewPanel' class='bulk-panel bulk-preview is-collapsed' style='grid-column: 1 / -1;'>
         <h4 class='bulk-title'>Batch mapped metadata preview</h4>
         <div class='small muted'>Core mapped values are shown directly for fast review before write.</div>
-        <table id='bulkPreviewTable'>
+        <div class='table-scroll'><table id='bulkPreviewTable'>
           <thead>
             <tr><th>Path</th><th>Series</th><th>Issue</th><th>Year</th><th>Publisher</th><th>Volume</th><th>Status</th><th>Confidence</th><th>Write</th></tr>
           </thead>
           <tbody></tbody>
-        </table>
+        </table></div>
       </section>
 
       <aside class='bulk-panel bulk-controls-panel'>
@@ -927,22 +931,22 @@ INDEX_HTML = """<!doctype html>
           <label><input id='bulkSelectAllActive' type='checkbox' onchange='bulkToggleSelectAll("active", this.checked)'> Select all active</label>
           <span class='muted'>Click column headers to sort active rows.</span>
         </div>
-        <table id='bulkQueueTable'>
+        <div class='table-scroll'><table id='bulkQueueTable'>
           <thead>
             <tr><th>↕</th><th></th><th>Hold</th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("status")'>Status</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("path")'>Path</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("series")'>Series</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("issue")'>Issue</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("year")'>Year</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("best")'>Best match</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("confidence")'>Confidence</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("note")'>Notes</button></th></tr>
           </thead>
           <tbody></tbody>
-        </table>
+        </table></div>
         <div class='row small' style='margin-top:.5rem;'>
           <label><input id='bulkSelectAllHolding' type='checkbox' onchange='bulkToggleSelectAll("holding", this.checked)'> Select all holding</label>
           <span class='muted'>Holding rows are excluded from active operations.</span>
         </div>
-        <table id='bulkHoldingTable'>
+        <div class='table-scroll'><table id='bulkHoldingTable'>
           <thead>
             <tr><th></th><th>Restore</th><th>Status</th><th>Path</th><th>Series</th><th>Issue</th><th>Year</th><th>Best match</th><th>Confidence</th><th>Notes</th></tr>
           </thead>
           <tbody></tbody>
-        </table>
+        </table></div>
         <details>
           <summary>Naming Convention (bulk)</summary>
           <div class='naming-toolbar'>
