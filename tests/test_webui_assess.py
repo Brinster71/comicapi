@@ -82,6 +82,7 @@ def test_index_html_has_bulk_apply_sort_and_drag_controls():
     assert "function bulkIncrementFieldFromSelected(field)" in html
     assert "Incremented ' + field + ' down" in html
     assert "function bulkSortCurrentRows(showMessage=true)" in html
+    assert "class='bulk-sort-btn'" in html
     assert "tr.setAttribute('draggable', appState.bulkManualOrder ? 'true' : 'false');" in html
     assert "function bulkMoveRow(dragId, targetId)" in html
     assert "function bulkToggleHold(rowId, held)" in html
@@ -102,8 +103,10 @@ def test_index_html_has_bulk_apply_sort_and_drag_controls():
     assert "<th>Status</th><th>Confidence</th><th>Write</th>" in html
     assert "onclick='bulkApplyCvToBatch(\"selected\")'" in html
     assert "onclick='bulkApplyCvToBatch(\"visible\")'" in html
+    assert "onclick='bulkApplyCvToBatch(\"active\")'" in html
     assert "function applyComicVineIssueToBulkRow(row, issue)" in html
     assert "function bulkApplyCvToBatch(scope)" in html
+    assert "No checked rows selected; applying to all visible active rows instead." in html
     assert "function deriveQueryFromPath(pathText)" in html
     assert "setStatus('Auto-filled search query from filename.', false);" in html
     assert "setStatus('Auto-filled bulk search query from filename hints.', false);" in html

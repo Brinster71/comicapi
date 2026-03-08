@@ -889,6 +889,7 @@ INDEX_HTML = """<!doctype html>
           <button onclick='bulkApplyCvToSelected()'>Apply to selected row</button>
           <button onclick='bulkApplyCvToBatch("selected")'>Apply to checked rows (by issue)</button>
           <button onclick='bulkApplyCvToBatch("visible")'>Apply to visible rows (by issue)</button>
+          <button onclick='bulkApplyCvToBatch("active")'>Apply to all active rows (by issue)</button>
           <span id='bulkCvHint' class='small muted'></span>
         </div>
         <div class='bulk-actions'>
@@ -905,7 +906,7 @@ INDEX_HTML = """<!doctype html>
         </div>
         <table id='bulkQueueTable'>
           <thead>
-            <tr><th>↕</th><th></th><th>Hold</th><th onclick='bulkSortByColumn("status")'>Status</th><th onclick='bulkSortByColumn("path")'>Path</th><th onclick='bulkSortByColumn("series")'>Series</th><th onclick='bulkSortByColumn("issue")'>Issue</th><th onclick='bulkSortByColumn("year")'>Year</th><th onclick='bulkSortByColumn("best")'>Best match</th><th onclick='bulkSortByColumn("confidence")'>Confidence</th><th onclick='bulkSortByColumn("note")'>Notes</th></tr>
+            <tr><th>↕</th><th></th><th>Hold</th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("status")'>Status</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("path")'>Path</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("series")'>Series</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("issue")'>Issue</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("year")'>Year</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("best")'>Best match</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("confidence")'>Confidence</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("note")'>Notes</button></th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -2884,9 +2885,15 @@ INDEX_HTML = """<!doctype html>
       }
 
       let rows = [];
-      if (scope === 'visible') rows = (appState.bulkRows || []).filter(passesBulkFilter);
+      if (scope === 'visible' || scope === 'active') rows = (appState.bulkRows || []).filter(passesBulkFilter);
       else rows = (appState.bulkRows || []).filter(r => !!r.selected);
 
+      if (!rows.length && scope === 'selected') {
+        rows = (appState.bulkRows || []).filter(passesBulkFilter);
+        if (rows.length) {
+          setStatus('No checked rows selected; applying to all visible active rows instead.', false);
+        }
+      }
       if (!rows.length) {
         setStatus(scope === 'visible' ? 'No visible rows to apply.' : 'No checked rows selected for batch apply.', true);
         return;
@@ -2910,7 +2917,7 @@ INDEX_HTML = """<!doctype html>
       });
 
       renderBulkQueue();
-      const suffix = scope === 'visible' ? 'visible' : 'checked';
+      const suffix = scope === 'visible' ? 'visible' : (scope === 'active' ? 'active' : 'checked');
       if (!changed) {
         setStatus('Batch apply could not map any ' + suffix + ' rows to ComicVine issues.', true);
         return;
