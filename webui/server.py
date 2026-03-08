@@ -1586,7 +1586,7 @@ INDEX_HTML = """<!doctype html>
       const picked = String(pickedFolderName || '').trim();
       if (!picked) return current;
       if (!current) return '';
-      const normalized = current.replace(/\\\\/g, '/').replace(/\\/+$/, '');
+      const normalized = current.replace(/\\\\/g, '/').replace(/\/+$/, '');
       if (!normalized || !normalized.startsWith('/')) return '';
       const parts = normalized.split('/').filter(Boolean);
       const base = parts.length ? parts[parts.length - 1] : '';
@@ -1597,7 +1597,7 @@ INDEX_HTML = """<!doctype html>
     function extractPickedFolderNameFromFiles(files) {
       const pickedFiles = Array.isArray(files) ? files : [];
       if (!pickedFiles.length) return '';
-      const rel = String(pickedFiles[0].webkitRelativePath || pickedFiles[0].name || '').replace(/\\/g, '/');
+      const rel = String(pickedFiles[0].webkitRelativePath || pickedFiles[0].name || '').replace(/\\\\/g, '/');
       if (!rel) return '';
       const parts = rel.split('/').filter(Boolean);
       return parts.length ? parts[0] : '';
@@ -1672,8 +1672,16 @@ INDEX_HTML = """<!doctype html>
     async function browseLibraryPath() {
       const input = document.getElementById('rootPath');
       const btn = document.getElementById('browseLibraryBtn');
+      const picker = document.getElementById('rootPathPicker');
       const previous = (input.value || '').trim();
       clearScanResults();
+      if (picker && typeof picker.click === 'function') {
+        picker.value = '';
+        setStatus('Opening browser folder picker…', false);
+        picker.click();
+        return;
+      }
+
       setStatus('Opening folder picker — look for a dialog window on your desktop…', false);
       if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
       let picked;
@@ -1714,6 +1722,12 @@ INDEX_HTML = """<!doctype html>
           setStatus('Folder selected: ' + resolved + '. Click Scan.', false);
           return;
         }
+
+        input.value = pickedFolder;
+        clearScanResults();
+        savePersistentFields();
+        setStatus('Folder selected in browser: ' + pickedFolder + '. Update to an absolute server path before Scan if needed.', true);
+        return;
       }
 
       setStatus('Browser folder picker not available; trying native picker…', false);
@@ -1741,7 +1755,15 @@ INDEX_HTML = """<!doctype html>
     async function browseBulkLibraryPath() {
       const input = document.getElementById('bulkRootPath');
       const btn = document.getElementById('browseBulkLibraryBtn');
+      const picker = document.getElementById('bulkRootPathPicker');
       const previous = (input.value || '').trim();
+      if (picker && typeof picker.click === 'function') {
+        picker.value = '';
+        setStatus('Opening browser folder picker…', false);
+        picker.click();
+        return;
+      }
+
       setStatus('Opening bulk folder picker — look for a dialog window on your desktop…', false);
       if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
       let picked;
@@ -1781,6 +1803,11 @@ INDEX_HTML = """<!doctype html>
           setStatus('Bulk folder selected: ' + resolved + '. Click Scan batch.', false);
           return;
         }
+
+        input.value = pickedFolder;
+        document.getElementById('bulkRootLabel').textContent = pickedFolder || '(not set)';
+        setStatus('Bulk folder selected in browser: ' + pickedFolder + '. Update to an absolute server path before Scan batch if needed.', true);
+        return;
       }
 
       setStatus('Browser folder picker not available; trying native picker…', false);
@@ -2058,11 +2085,11 @@ INDEX_HTML = """<!doctype html>
       }).replace(/[\\\\/]+/g, '/').trim();
 
       const withExt = (!ext || /\.[A-Za-z0-9]+$/.test(replaced)) ? replaced : (replaced + ext);
-      const normalizedSource = String(sourcePath || '').replace(/\\/g, '/').trim();
+      const normalizedSource = String(sourcePath || '').replace(/\\\\/g, '/').trim();
       const sourceDir = normalizedSource.includes('/')
         ? normalizedSource.slice(0, normalizedSource.lastIndexOf('/'))
         : '';
-      const normalizedTarget = String(withExt || '').replace(/\\/g, '/').replace(/\/+$/, '');
+      const normalizedTarget = String(withExt || '').replace(/\\\\/g, '/').replace(/\/+$/, '');
       if (!normalizedTarget) return '';
 
       // Keep absolute paths as-is (Unix, UNC, or Windows drive paths).
