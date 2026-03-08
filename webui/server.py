@@ -798,8 +798,8 @@ INDEX_HTML = """<!doctype html>
         <button onclick='previousNamingPattern("single")'>Previous</button>
       </div>
     </div>
-    <div class='muted small'>Use variables like {Series}, {IssueNumber}, {VolumeNumber}, {Year}, {Title}, {Publisher}, {Month}, {Day}. Missing values fall back to variable names in preview.</div>
-    <textarea id='singleNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...' readonly></textarea>
+    <div class='muted small'>Use variables like {Series}, {Issue}, {IssueNumber}, {Title}, {IssueName}, {Publisher}, {Year}, {StartYear}, {PublishedYear}, {Volume}, {VolumeNumber}, {Month}, {Day}, {Writer}, {Editor}, {CoverArtist}, {Penciller}, {Inker}, {Colorist}, {Letterer}, {Language}, {StoryArc}, {StoryArcNumber}, {Tags}, {PageCount}, {ISBN}, {Barcode}, {ComicVineIssueId}, {ComicVineSeriesId}, {Description}. Names with spaces also work (e.g. {Start Year}). Missing values fall back to token text in preview.</div>
+    <textarea id='singleNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...'></textarea>
     <div class='naming-bottom'>
       <button onclick='clearNamingSection("single")'>Clear</button>
       <button id='singleNamingOverrideBtn' onclick='toggleNamingOverride("single")'>Override</button>
@@ -923,8 +923,8 @@ INDEX_HTML = """<!doctype html>
               <button onclick='previousNamingPattern("bulk")'>Previous</button>
             </div>
           </div>
-          <div class='muted small'>Use variables like {Series}, {IssueNumber}, {VolumeNumber}, {Year}, {Title}, {Publisher}, {Month}, {Day}. Missing values fall back to variable names in preview.</div>
-          <textarea id='bulkNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...' readonly></textarea>
+          <div class='muted small'>Use variables like {Series}, {Issue}, {IssueNumber}, {Title}, {IssueName}, {Publisher}, {Year}, {StartYear}, {PublishedYear}, {Volume}, {VolumeNumber}, {Month}, {Day}, {Writer}, {Editor}, {CoverArtist}, {Penciller}, {Inker}, {Colorist}, {Letterer}, {Language}, {StoryArc}, {StoryArcNumber}, {Tags}, {PageCount}, {ISBN}, {Barcode}, {ComicVineIssueId}, {ComicVineSeriesId}, {Description}. Names with spaces also work (e.g. {Start Year}). Missing values fall back to token text in preview.</div>
+          <textarea id='bulkNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...'></textarea>
           <div class='naming-bottom'>
             <button onclick='clearNamingSection("bulk")'>Clear</button>
             <button id='bulkNamingOverrideBtn' onclick='toggleNamingOverride("bulk")'>Override</button>
@@ -1034,6 +1034,23 @@ INDEX_HTML = """<!doctype html>
         writeEl.value = comic;
         appState.writePathManual = false;
       }
+    }
+
+
+    function isAbsolutePath(path) {
+      const p = String(path || '').trim();
+      return /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(p);
+    }
+
+    function normalizeSlashPath(path) {
+      return String(path || '').trim().replace(/\\\\/g, '/');
+    }
+
+    function combinePath(baseDir, childPath) {
+      const base = normalizeSlashPath(baseDir).replace(/\/+$/, '');
+      const child = normalizeSlashPath(childPath).replace(/^\/+/, '');
+      if (!base) return child;
+      return (base + '/' + child).replace(/\/+/g, '/');
     }
 
     function setComicPathValue(path) {
@@ -1586,18 +1603,20 @@ INDEX_HTML = """<!doctype html>
       const picked = String(pickedFolderName || '').trim();
       if (!picked) return current;
       if (!current) return '';
-      const normalized = current.replace(/\\\\/g, '/').replace(/\\/+$/, '');
+      const normalized = current.replace(/\\\\/g, '/').replace(/\/+$/, '');
       if (!normalized || !normalized.startsWith('/')) return '';
       const parts = normalized.split('/').filter(Boolean);
       const base = parts.length ? parts[parts.length - 1] : '';
       if (base && base.toLowerCase() === picked.toLowerCase()) return normalized;
-      return normalized + '/' + picked;
+      if (!parts.length) return '/' + picked;
+      parts[parts.length - 1] = picked;
+      return '/' + parts.join('/');
     }
 
     function extractPickedFolderNameFromFiles(files) {
       const pickedFiles = Array.isArray(files) ? files : [];
       if (!pickedFiles.length) return '';
-      const rel = String(pickedFiles[0].webkitRelativePath || pickedFiles[0].name || '').replace(/\\/g, '/');
+      const rel = String(pickedFiles[0].webkitRelativePath || pickedFiles[0].name || '').replace(/\\\\/g, '/');
       if (!rel) return '';
       const parts = rel.split('/').filter(Boolean);
       return parts.length ? parts[0] : '';
@@ -1655,6 +1674,27 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
+
+    async function browseDirectoryPathBrowser(previous) {
+      if (!window || typeof window.showDirectoryPicker !== 'function') {
+        return { path: '', folder: '', usedBrowserPicker: false, cancelled: false, error: 'Browser directory picker unavailable' };
+      }
+      try {
+        const suggested = String(previous || '').trim();
+        const opts = { mode: 'read' };
+        if (suggested) opts.startIn = 'documents';
+        const handle = await window.showDirectoryPicker(opts);
+        const folder = String((handle && handle.name) ? handle.name : '').trim();
+        return { path: '', folder: folder, usedBrowserPicker: true, cancelled: false, error: '' };
+      } catch (err) {
+        const name = err && err.name ? String(err.name) : '';
+        if (name === 'AbortError') {
+          return { path: '', folder: '', usedBrowserPicker: true, cancelled: true, error: '' };
+        }
+        return { path: '', folder: '', usedBrowserPicker: true, cancelled: false, error: (err && err.message) ? String(err.message) : 'Browser directory picker failed' };
+      }
+    }
+
     function clearScanResults() {
       const tbody = document.querySelector('#scanTable tbody');
       if (tbody) tbody.innerHTML = '';
@@ -1674,6 +1714,32 @@ INDEX_HTML = """<!doctype html>
       const btn = document.getElementById('browseLibraryBtn');
       const previous = (input.value || '').trim();
       clearScanResults();
+      if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
+      let browserPicked;
+      try {
+        setStatus('Opening browser folder picker…', false);
+        browserPicked = await browseDirectoryPathBrowser(previous);
+      } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('btn-busy'); btn.textContent = 'Browse…'; }
+      }
+      if (browserPicked && browserPicked.folder) {
+        const resolved = applyPickedFolderToInput(input, browserPicked.folder, previous);
+        if (resolved.startsWith('/')) {
+          input.value = resolved;
+          savePersistentFields();
+          setStatus('Folder selected: ' + resolved + '. Click Scan.', false);
+          return;
+        }
+        input.value = browserPicked.folder;
+        savePersistentFields();
+        setStatus('Folder selected in browser: ' + browserPicked.folder + '. Update to an absolute server path before Scan if needed.', true);
+        return;
+      }
+      if (browserPicked && browserPicked.cancelled) {
+        setStatus('Folder selection cancelled.', true);
+        return;
+      }
+
       setStatus('Opening folder picker — look for a dialog window on your desktop…', false);
       if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
       let picked;
@@ -1714,6 +1780,12 @@ INDEX_HTML = """<!doctype html>
           setStatus('Folder selected: ' + resolved + '. Click Scan.', false);
           return;
         }
+
+        input.value = pickedFolder;
+        clearScanResults();
+        savePersistentFields();
+        setStatus('Folder selected in browser: ' + pickedFolder + '. Update to an absolute server path before Scan if needed.', true);
+        return;
       }
 
       setStatus('Browser folder picker not available; trying native picker…', false);
@@ -1742,6 +1814,32 @@ INDEX_HTML = """<!doctype html>
       const input = document.getElementById('bulkRootPath');
       const btn = document.getElementById('browseBulkLibraryBtn');
       const previous = (input.value || '').trim();
+      if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
+      let browserPicked;
+      try {
+        setStatus('Opening browser folder picker…', false);
+        browserPicked = await browseDirectoryPathBrowser(previous);
+      } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('btn-busy'); btn.textContent = 'Browse…'; }
+      }
+      if (browserPicked && browserPicked.folder) {
+        const resolved = applyPickedFolderToInput(input, browserPicked.folder, previous);
+        if (resolved.startsWith('/')) {
+          input.value = resolved;
+          document.getElementById('bulkRootLabel').textContent = resolved || '(not set)';
+          setStatus('Bulk folder selected: ' + resolved + '. Click Scan batch.', false);
+          return;
+        }
+        input.value = browserPicked.folder;
+        document.getElementById('bulkRootLabel').textContent = browserPicked.folder || '(not set)';
+        setStatus('Bulk folder selected in browser: ' + browserPicked.folder + '. Update to an absolute server path before Scan batch if needed.', true);
+        return;
+      }
+      if (browserPicked && browserPicked.cancelled) {
+        setStatus('Bulk folder selection cancelled.', true);
+        return;
+      }
+
       setStatus('Opening bulk folder picker — look for a dialog window on your desktop…', false);
       if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
       let picked;
@@ -1781,6 +1879,11 @@ INDEX_HTML = """<!doctype html>
           setStatus('Bulk folder selected: ' + resolved + '. Click Scan batch.', false);
           return;
         }
+
+        input.value = pickedFolder;
+        document.getElementById('bulkRootLabel').textContent = pickedFolder || '(not set)';
+        setStatus('Bulk folder selected in browser: ' + pickedFolder + '. Update to an absolute server path before Scan batch if needed.', true);
+        return;
       }
 
       setStatus('Browser folder picker not available; trying native picker…', false);
@@ -2036,33 +2139,69 @@ INDEX_HTML = """<!doctype html>
 
     function buildNamingValueMap(sourceMeta) {
       const md = sourceMeta || {};
-      return {
-        Series: sanitizeNamingValue(md.series || md.Series || ''),
-        IssueNumber: sanitizeNamingValue(md.issue || md.IssueNumber || ''),
-        VolumeNumber: sanitizeNamingValue(md.volume || md.VolumeNumber || ''),
-        Year: sanitizeNamingValue(md.year || md.publishedYear || md.Year || ''),
-        Title: sanitizeNamingValue(md.title || md.issueName || md.Title || ''),
-        Publisher: sanitizeNamingValue(md.publisher || md.Publisher || ''),
-        Month: sanitizeNamingValue(md.month || md.Month || ''),
-        Day: sanitizeNamingValue(md.day || md.Day || ''),
+      const values = {
+        Series: md.series || md.Series || '',
+        Issue: md.issue || md.Issue || '',
+        IssueNumber: md.issue || md.IssueNumber || '',
+        Volume: md.volume || md.Volume || '',
+        VolumeNumber: md.volume || md.VolumeNumber || '',
+        Year: md.year || md.publishedYear || md.Year || '',
+        StartYear: md.startYear || md.StartYear || '',
+        PublishedYear: md.publishedYear || md.year || md.PublishedYear || '',
+        Title: md.title || md.Title || '',
+        IssueName: md.issueName || md.IssueName || md.title || '',
+        Publisher: md.publisher || md.Publisher || '',
+        Month: md.month || md.Month || '',
+        Day: md.day || md.Day || '',
+        Writer: md.writer || md.Writer || '',
+        Editor: md.editor || md.Editor || '',
+        CoverArtist: md.coverArtist || md.CoverArtist || '',
+        Penciller: md.penciller || md.Penciller || '',
+        Inker: md.inker || md.Inker || '',
+        Colorist: md.colorist || md.Colorist || '',
+        Letterer: md.letterer || md.Letterer || '',
+        Language: md.language || md.Language || '',
+        StoryArc: md.storyArc || md.StoryArc || '',
+        StoryArcNumber: md.storyArcNumber || md.StoryArcNumber || '',
+        Tags: md.tags || md.Tags || '',
+        PageCount: md.pageCount || md.PageCount || '',
+        ISBN: md.isbn || md.ISBN || '',
+        Barcode: md.barcode || md.Barcode || '',
+        ComicVineIssueId: md.comicVineIssueId || md.ComicVineIssueId || '',
+        ComicVineSeriesId: md.comicVineSeriesId || md.ComicVineSeriesId || '',
+        Description: md.description || md.Description || '',
       };
+      const out = {};
+      Object.keys(values).forEach((key) => {
+        out[key] = sanitizeNamingValue(values[key]);
+      });
+      return out;
+    }
+
+    function namingTokenKey(token) {
+      return String(token || '').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
     }
 
     function renderNamingFromPattern(pattern, sourceMeta, sourcePath) {
-      const extMatch = String(sourcePath || '').match(/(\\.[A-Za-z0-9]+)$/);
+      const extMatch = String(sourcePath || '').match(/(\.[A-Za-z0-9]+)$/);
       const ext = extMatch ? extMatch[1] : '';
       const tokens = buildNamingValueMap(sourceMeta);
-      const replaced = String(pattern || '').replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (_, token) => {
-        const value = tokens[token];
+      const normalizedTokenMap = {};
+      Object.keys(tokens).forEach((key) => {
+        normalizedTokenMap[namingTokenKey(key)] = tokens[key];
+      });
+      const replaced = String(pattern || '').replace(/\{([^}]+)\}/g, (_, rawToken) => {
+        const token = String(rawToken || '').trim();
+        const value = tokens[token] || normalizedTokenMap[namingTokenKey(token)] || '';
         return value ? value : token;
-      }).replace(/[\\\\/]+/g, '/').trim();
+      }).replace(/[\\/]+/g, '/').trim();
 
       const withExt = (!ext || /\.[A-Za-z0-9]+$/.test(replaced)) ? replaced : (replaced + ext);
-      const normalizedSource = String(sourcePath || '').replace(/\\/g, '/').trim();
+      const normalizedSource = String(sourcePath || '').replace(/\\\\/g, '/').trim();
       const sourceDir = normalizedSource.includes('/')
         ? normalizedSource.slice(0, normalizedSource.lastIndexOf('/'))
         : '';
-      const normalizedTarget = String(withExt || '').replace(/\\/g, '/').replace(/\/+$/, '');
+      const normalizedTarget = String(withExt || '').replace(/\\\\/g, '/').replace(/\/+$/, '');
       if (!normalizedTarget) return '';
 
       // Keep absolute paths as-is (Unix, UNC, or Windows drive paths).
@@ -2081,12 +2220,32 @@ INDEX_HTML = """<!doctype html>
       return {
         series: (document.getElementById('map_series') && document.getElementById('map_series').value) || loaded.series || '',
         issue: issueNumber,
+        issueName: (document.getElementById('map_issue_name') && document.getElementById('map_issue_name').value) || loaded.issueName || '',
         volume: (document.getElementById('map_volume') && document.getElementById('map_volume').value) || loaded.volume || '1',
         year: publishedYear || startYear,
+        startYear: startYear,
+        publishedYear: publishedYear,
         title: (document.getElementById('map_title') && document.getElementById('map_title').value) || loaded.title || loaded.issueName || '',
         publisher: (document.getElementById('map_publisher') && document.getElementById('map_publisher').value) || loaded.publisher || '',
         month: (document.getElementById('map_month') && document.getElementById('map_month').value) || loaded.month || '',
         day: (document.getElementById('map_day') && document.getElementById('map_day').value) || loaded.day || '',
+        writer: (document.getElementById('map_writer') && document.getElementById('map_writer').value) || loaded.writer || '',
+        editor: (document.getElementById('map_editor') && document.getElementById('map_editor').value) || loaded.editor || '',
+        coverArtist: (document.getElementById('map_cover_artist') && document.getElementById('map_cover_artist').value) || loaded.coverArtist || '',
+        storyArc: (document.getElementById('map_story_arc') && document.getElementById('map_story_arc').value) || loaded.storyArc || '',
+        storyArcNumber: (document.getElementById('map_story_arc_num') && document.getElementById('map_story_arc_num').value) || loaded.storyArcNumber || '',
+        tags: (document.getElementById('map_tags') && document.getElementById('map_tags').value) || loaded.tags || '',
+        pageCount: (document.getElementById('map_page_count') && document.getElementById('map_page_count').value) || loaded.pageCount || '',
+        isbn: (document.getElementById('map_isbn') && document.getElementById('map_isbn').value) || loaded.isbn || '',
+        barcode: (document.getElementById('map_barcode') && document.getElementById('map_barcode').value) || loaded.barcode || '',
+        language: (document.getElementById('map_language') && document.getElementById('map_language').value) || loaded.language || '',
+        penciller: (document.getElementById('map_penciller') && document.getElementById('map_penciller').value) || loaded.penciller || '',
+        inker: (document.getElementById('map_inker') && document.getElementById('map_inker').value) || loaded.inker || '',
+        colorist: (document.getElementById('map_colorist') && document.getElementById('map_colorist').value) || loaded.colorist || '',
+        letterer: (document.getElementById('map_letterer') && document.getElementById('map_letterer').value) || loaded.letterer || '',
+        comicVineIssueId: (document.getElementById('map_issue_id') && document.getElementById('map_issue_id').value) || loaded.comicVineIssueId || '',
+        comicVineSeriesId: (document.getElementById('map_series_id') && document.getElementById('map_series_id').value) || loaded.comicVineSeriesId || '',
+        description: (document.getElementById('map_description') && document.getElementById('map_description').value) || loaded.description || '',
       };
     }
 
@@ -2102,12 +2261,32 @@ INDEX_HTML = """<!doctype html>
       return {
         series: r.series || '',
         issue: r.issue || '',
+        issueName: r.issueName || '',
         volume: r.volume || '1',
         year: r.year || r.publishedYear || '',
+        startYear: r.startYear || '',
+        publishedYear: r.publishedYear || r.year || '',
         title: r.title || r.issueName || '',
         publisher: r.publisher || '',
         month: r.month || '',
         day: r.day || '',
+        writer: r.writer || '',
+        editor: r.editor || '',
+        coverArtist: r.coverArtist || '',
+        storyArc: r.storyArc || '',
+        storyArcNumber: r.storyArcNumber || '',
+        tags: r.tags || '',
+        pageCount: r.pageCount || '',
+        isbn: r.isbn || '',
+        barcode: r.barcode || '',
+        language: r.language || '',
+        penciller: r.penciller || '',
+        inker: r.inker || '',
+        colorist: r.colorist || '',
+        letterer: r.letterer || '',
+        comicVineIssueId: r.comicVineIssueId || '',
+        comicVineSeriesId: r.comicVineSeriesId || '',
+        description: r.description || '',
       };
     }
 
@@ -2206,6 +2385,8 @@ INDEX_HTML = """<!doctype html>
     function buildSingleNamingWriteTarget(path) {
       const state = namingState('single');
       if (!state.apply) return '';
+      const preview = (document.getElementById('singleNamingPreview').value || '').trim();
+      if (preview) return preview;
       const pattern = (document.getElementById('singleNamingPattern').value || '').trim();
       if (!pattern) return '';
       return renderNamingFromPattern(pattern, buildSingleNamingSourceMetadata(), path || '');
@@ -2214,6 +2395,8 @@ INDEX_HTML = """<!doctype html>
     function buildBulkNamingWriteTarget(row) {
       const state = namingState('bulk');
       if (!state.apply) return '';
+      const preview = (document.getElementById('bulkNamingPreview').value || '').trim();
+      if (preview) return preview;
       const pattern = (document.getElementById('bulkNamingPattern').value || '').trim();
       if (!pattern) return '';
       return renderNamingFromPattern(pattern, buildBulkNamingSourceMetadata(row), (row && row.path) || '');
@@ -2252,15 +2435,38 @@ INDEX_HTML = """<!doctype html>
     }
 
     async function writeFromJsonPayload(payload) {
-      const path = document.getElementById('comicPath').value.trim();
-      const writePath = (document.getElementById('writePath').value || '').trim();
+      const rawPath = document.getElementById('comicPath').value.trim();
+      const rawWritePath = (document.getElementById('writePath').value || '').trim();
+      const rootPath = (document.getElementById('rootPath').value || '').trim();
       const style = document.getElementById('style').value;
-      if (!path) return alert('Select or enter a comic file path first.');
+      if (!rawPath) return alert('Select or enter a comic file path first.');
+
+      let path = rawPath;
+      if (!isAbsolutePath(path) && isAbsolutePath(rootPath)) {
+        path = combinePath(rootPath, path);
+      }
+      if (!isAbsolutePath(path)) {
+        setStatus('Write failed: selected file path must be absolute on the server. Set Library path and reselect, or enter absolute path manually.', true);
+        return;
+      }
+
+      let writePath = rawWritePath;
+      if (writePath && !isAbsolutePath(writePath)) {
+        const sourceDir = normalizeSlashPath(path).replace(/\/[^/]*$/, '');
+        writePath = combinePath(sourceDir, writePath);
+      }
+
       const patch = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : payload;
       setStatus('Writing metadata to file…', false);
       try {
+        document.getElementById('comicPath').value = path;
+        if (writePath) document.getElementById('writePath').value = writePath;
         const singleNaming = namingState('single');
-        const namingTarget = buildSingleNamingWriteTarget(path);
+        let namingTarget = buildSingleNamingWriteTarget(path);
+        if (namingTarget && !isAbsolutePath(namingTarget)) {
+          const sourceDir = normalizeSlashPath(path).replace(/\/[^/]*$/, '');
+          namingTarget = combinePath(sourceDir, namingTarget);
+        }
         const primaryTarget = (singleNaming.apply && singleNaming.override && namingTarget)
           ? namingTarget
           : (writePath || '');
@@ -2279,7 +2485,6 @@ INDEX_HTML = """<!doctype html>
         }
 
         const first = await postWrite(primaryTarget);
-        showJson('metadataJson', first.out);
         if (!first.res.ok || !first.out.ok) {
           setStatus('Write failed: ' + (first.out.error || ('HTTP ' + first.res.status)), true);
           return;
@@ -2288,7 +2493,6 @@ INDEX_HTML = """<!doctype html>
         const firstPath = first.out.written_path || first.out.path || path;
         if (singleNaming.apply && !singleNaming.override && namingTarget && namingTarget !== firstPath) {
           const mirror = await postWrite(namingTarget);
-          showJson('metadataJson', mirror.out);
           if (!mirror.res.ok || !mirror.out.ok) {
             setStatus('Primary write succeeded, naming mirror failed: ' + (mirror.out.error || ('HTTP ' + mirror.res.status)), true);
             return;
@@ -4102,10 +4306,14 @@ class Handler(BaseHTTPRequestHandler):
         patch = payload.get("metadata", {})
         if not path:
             return self._json(400, {"error": "path is required"})
+        if not os.path.exists(path):
+            return self._json(400, {"error": "source path does not exist", "path": path})
         if style != "AUTO" and style not in STYLE_MAP:
             return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
 
         target_path = write_path.strip() or path
+        if write_path and not os.path.isabs(target_path):
+            return self._json(400, {"error": "write_path must be an absolute path", "write_path": write_path})
         if target_path != path:
             target_dir = os.path.dirname(os.path.abspath(target_path))
             if target_dir and not os.path.exists(target_dir):
