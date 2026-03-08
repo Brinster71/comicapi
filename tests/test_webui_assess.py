@@ -33,23 +33,23 @@ def test_index_html_has_library_picker_field_update_and_write_error_status():
     html = server.INDEX_HTML
     assert "function combinePickedFolderWithCurrentPath" in html
     assert "current.replace(/\\\\/g, '/')" in html
+    assert ".replace(/\\/+$/, '')" in html
     assert "if (base && base.toLowerCase() === picked.toLowerCase()) return normalized;" in html
+    assert "parts[parts.length - 1] = picked;" in html
+    assert "return '/' + parts.join('/')" in html
     assert "clearScanResults();" in html
-    assert "id='rootPathPicker'" in html
+    assert "browse buttons removed" in html
+    assert "id='rootPathPicker'" not in html
     assert "function extractPickedFolderNameFromFiles(files)" in html
-    assert "async function browseLibraryPathNative(previous)" in html
-    assert "fetch('/api/pick_directory?current=' + encodeURIComponent(prior || ''), { signal: controller.signal })" in html
-    assert "const controller = new AbortController();" in html
-    assert "setTimeout(() => controller.abort(), 25000);" in html
     assert "showInlinePathEntry(" in html
     assert "id='pathPickOverlay'" in html
-    assert "Folder picker timed out; enter absolute path manually" in html
-    assert "async function browseLibraryPath()" in html
-    assert "async function browseBulkLibraryPath()" in html
-    assert "const picked = await browseLibraryPathNative(previous);" in html
-    assert "const picked = await browseBulkLibraryPathNative(previous);" in html
-    assert "Folder picker unavailable:" in html
-    assert "setStatus('Folder selected: ' + input.value + '. Click Scan.'" in html
+    assert "Names with spaces also work (e.g. {Start Year})" in html
+    assert "id='singleNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...'" in html
+    assert "id='singleNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...' readonly" not in html
+    assert "const preview = (document.getElementById('singleNamingPreview').value || '').trim();" in html
+    assert "function isAbsolutePath(path)" in html
+    assert "path = combinePath(rootPath, path);" in html
+    assert "selected file path must be absolute on the server" in html
     assert "try {" in html and "setStatus('Write failed: ' + (err && err.message ? err.message : 'request failed'), true);" in html
 
 
@@ -59,13 +59,16 @@ def test_index_html_has_diagnostics_and_write_browse_hooks():
     assert "id='diagBanner'" in html
     assert "async function loadRuntimeDiagnostics()" in html
     assert "fetch('/api/version')" in html
-    assert "function browseWritePath()" in html
+    assert "onclick='browseWritePath()'" not in html
     assert "function onWriteFilePicked(evt)" in html
     assert "setStatus('Scanning library…', false);" in html
     assert "setStatus('Scan failed: ' + (data.error || ('HTTP ' + res.status)), true);" in html
     assert "function buildComicVineQueryFromAssessment(data)" in html
     assert "const parts = [series, issue, title].filter(Boolean);" in html
     assert "const autoQuery = buildComicVineQueryFromAssessment(data);" in html
+    assert "sidecar_path" in html
+    assert "save_mode" in html
+    assert "postWrite(namingTarget, 'hardlink')" in html
     assert "cvQuery.value = autoQuery;" in html
 
 
@@ -79,8 +82,15 @@ def test_index_html_has_bulk_apply_sort_and_drag_controls():
     assert "function bulkIncrementFieldFromSelected(field)" in html
     assert "Incremented ' + field + ' down" in html
     assert "function bulkSortCurrentRows(showMessage=true)" in html
-    assert "tr.setAttribute('draggable', 'true');" in html
+    assert "class='bulk-sort-btn'" in html
+    assert "tr.setAttribute('draggable', appState.bulkManualOrder ? 'true' : 'false');" in html
     assert "function bulkMoveRow(dragId, targetId)" in html
+    assert "function bulkToggleHold(rowId, held)" in html
+    assert "function bulkToggleSelectAll(lane, checked)" in html
+    assert "function bulkSortByColumn(key)" in html
+    assert "id='bulkSelectAllActive'" in html
+    assert "id='bulkSelectAllHolding'" in html
+    assert "id='bulkHoldingTable'" in html
     assert "onclick='bulkWriteSelected()'" in html
     assert "onclick='bulkRetryFailed()'" in html
     assert "function buildBulkMetadataPatch(row)" in html
@@ -93,8 +103,10 @@ def test_index_html_has_bulk_apply_sort_and_drag_controls():
     assert "<th>Status</th><th>Confidence</th><th>Write</th>" in html
     assert "onclick='bulkApplyCvToBatch(\"selected\")'" in html
     assert "onclick='bulkApplyCvToBatch(\"visible\")'" in html
+    assert "onclick='bulkApplyCvToBatch(\"active\")'" in html
     assert "function applyComicVineIssueToBulkRow(row, issue)" in html
     assert "function bulkApplyCvToBatch(scope)" in html
+    assert "No checked rows selected; applying to all visible active rows instead." in html
     assert "function deriveQueryFromPath(pathText)" in html
     assert "setStatus('Auto-filled search query from filename.', false);" in html
     assert "setStatus('Auto-filled bulk search query from filename hints.', false);" in html
@@ -106,6 +118,10 @@ def test_index_html_has_bulk_apply_sort_and_drag_controls():
     assert "function renderBulkFieldGap(row)" in html
     assert "issueName: row.issueName" in html
     assert "comicVineIssueId: row.comicVineIssueId" in html
+    assert "id='bulkRecordBank'" in html
+    assert "id='bulkRecordList'" in html
+    assert "function renderBulkRecordBank()" in html
+    assert "cvrecord:" in html
 
 
 def test_index_html_has_naming_and_recursive_scan_controls():
