@@ -377,6 +377,13 @@ INDEX_HTML = """<!doctype html>
       backdrop-filter: blur(10px);
       padding: .7rem;
     }
+    .bulk-controls-panel {
+      position: sticky;
+      top: .7rem;
+      align-self: start;
+      max-height: calc(100vh - 1.4rem);
+      overflow: auto;
+    }
     .bulk-panel.is-collapsed {
       display: none;
     }
@@ -582,6 +589,11 @@ INDEX_HTML = """<!doctype html>
       .mapping-grid { grid-template-columns: 22px 130px 1fr; }
       input[type=text] { min-width: 14rem; }
       .bulk-layout { grid-template-columns: 1fr; }
+      .bulk-controls-panel {
+        position: static;
+        max-height: none;
+        overflow: visible;
+      }
       .bulk-cards { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
       .bulk-field-row { grid-template-columns: 1fr; }
       .gap-grid { grid-template-columns: 1fr; }
@@ -842,7 +854,7 @@ INDEX_HTML = """<!doctype html>
         </table>
       </section>
 
-      <aside class='bulk-panel'>
+      <aside class='bulk-panel bulk-controls-panel'>
         <h4 class='bulk-title'>Batch controls</h4>
         <div class='row'>
           <label>Match mode:</label>
