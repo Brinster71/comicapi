@@ -899,9 +899,23 @@ INDEX_HTML = """<!doctype html>
           <button class='bulk-chip' onclick='bulkFilter("written")'>Written</button>
           <button class='bulk-chip' onclick='bulkFilter("skip")'>Skipped</button>
         </div>
+        <div class='row small'>
+          <label><input id='bulkSelectAllActive' type='checkbox' onchange='bulkToggleSelectAll("active", this.checked)'> Select all active</label>
+          <span class='muted'>Click column headers to sort active rows.</span>
+        </div>
         <table id='bulkQueueTable'>
           <thead>
-            <tr><th>↕</th><th></th><th>Status</th><th>Path</th><th>Series</th><th>Issue</th><th>Year</th><th>Best match</th><th>Confidence</th><th>Notes</th></tr>
+            <tr><th>↕</th><th></th><th>Hold</th><th onclick='bulkSortByColumn("status")'>Status</th><th onclick='bulkSortByColumn("path")'>Path</th><th onclick='bulkSortByColumn("series")'>Series</th><th onclick='bulkSortByColumn("issue")'>Issue</th><th onclick='bulkSortByColumn("year")'>Year</th><th onclick='bulkSortByColumn("best")'>Best match</th><th onclick='bulkSortByColumn("confidence")'>Confidence</th><th onclick='bulkSortByColumn("note")'>Notes</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class='row small' style='margin-top:.5rem;'>
+          <label><input id='bulkSelectAllHolding' type='checkbox' onchange='bulkToggleSelectAll("holding", this.checked)'> Select all holding</label>
+          <span class='muted'>Holding rows are excluded from active operations.</span>
+        </div>
+        <table id='bulkHoldingTable'>
+          <thead>
+            <tr><th></th><th>Restore</th><th>Status</th><th>Path</th><th>Series</th><th>Issue</th><th>Year</th><th>Best match</th><th>Confidence</th><th>Notes</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -1005,6 +1019,7 @@ INDEX_HTML = """<!doctype html>
       bulkFilter: 'all',
       bulkDragId: null,
       bulkManualOrder: false,
+      bulkSort: { key: 'issue', dir: 'asc' },
       bulkCvData: null,
       bulkCvIssues: [],
       bulkGapVisible: false,
@@ -2967,6 +2982,7 @@ INDEX_HTML = """<!doctype html>
         error: raw.error || '',
         hints,
         selected: false,
+        held: false,
         writeState: '',
         writeError: '',
         series: hints.series || '',
@@ -3143,8 +3159,13 @@ INDEX_HTML = """<!doctype html>
     }
 
     function passesBulkFilter(row) {
+      if (!row || row.held) return false;
       const st = classifyBulkRow(row);
       return appState.bulkFilter === 'all' || st === appState.bulkFilter;
+    }
+
+    function holdingRows() {
+      return (appState.bulkRows || []).filter(r => !!r.held);
     }
 
     function clearBulkDropTargets() {
@@ -3163,11 +3184,67 @@ INDEX_HTML = """<!doctype html>
       setStatus('Row order updated by drag-and-drop.', false);
     }
 
+
+    function bulkToggleHold(rowId, held) {
+      const row = getBulkRowById(rowId);
+      if (!row) return;
+      row.held = !!held;
+      row.selected = false;
+      if (row.held && String(appState.bulkSelectedId) === String(row.id)) appState.bulkSelectedId = null;
+      renderBulkQueue();
+      setStatus((row.held ? 'Moved to holding: ' : 'Restored to active: ') + (row.path || row.id), false);
+    }
+
+    function bulkToggleSelectAll(lane, checked) {
+      const rows = lane === 'holding' ? holdingRows() : (appState.bulkRows || []).filter(passesBulkFilter);
+      rows.forEach(r => { r.selected = !!checked; });
+      renderBulkQueue();
+      setStatus((checked ? 'Selected ' : 'Cleared ') + rows.length + ' ' + lane + ' row(s).', false);
+    }
+
+    function bulkSortByColumn(key) {
+      const sort = appState.bulkSort || { key: 'issue', dir: 'asc' };
+      if (sort.key === key) sort.dir = (sort.dir === 'asc') ? 'desc' : 'asc';
+      else { sort.key = key; sort.dir = 'asc'; }
+      appState.bulkSort = sort;
+      appState.bulkManualOrder = false;
+      renderBulkQueue();
+      setStatus('Sorted active rows by ' + key + ' (' + sort.dir + ').', false);
+    }
+
+    function bulkSortValueForRow(row, key) {
+      const hints = row.hints || {};
+      const st = classifyBulkRow(row);
+      const conf = confidenceForBulkRow(row);
+      if (key === 'status') return st;
+      if (key === 'path') return String(row.path || '');
+      if (key === 'series') return String(row.series || hints.series || '');
+      if (key === 'issue') return issueTokenForRow(row) ?? 1e12;
+      if (key === 'year') return yearTokenForRow(row) ?? 1e12;
+      if (key === 'best') return String((row.series || hints.series || '') + ' ' + (row.issue || hints.issue || ''));
+      if (key === 'confidence') return conf;
+      if (key === 'note') return String(row.writeError || row.error || '');
+      return String(row.path || '');
+    }
+
+    function applyActiveBulkSort(rows) {
+      const sort = appState.bulkSort || { key: 'issue', dir: 'asc' };
+      const factor = sort.dir === 'desc' ? -1 : 1;
+      rows.sort((a, b) => {
+        const va = bulkSortValueForRow(a, sort.key);
+        const vb = bulkSortValueForRow(b, sort.key);
+        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * factor;
+        return String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' }) * factor;
+      });
+      return rows;
+    }
+
     function renderBulkQueue() {
       const tbody = document.querySelector('#bulkQueueTable tbody');
       if (!tbody) return;
       tbody.innerHTML = '';
-      (appState.bulkRows || []).filter(passesBulkFilter).forEach((r) => {
+      const activeRows = applyActiveBulkSort((appState.bulkRows || []).filter(passesBulkFilter).slice());
+      activeRows.forEach((r) => {
         const hints = r.hints || parseFilenameHints(r.path || '');
         const st = classifyBulkRow(r);
         const conf = confidenceForBulkRow(r);
@@ -3183,8 +3260,8 @@ INDEX_HTML = """<!doctype html>
                 : (r.error || (st === 'review' ? 'Needs review' : ((r.has_cix || r.has_cbi || r.has_comet) ? 'Ready' : 'Ready (write will create metadata style)')))));
         const tr = document.createElement('tr');
         tr.className = 'bulk-queue-row';
-        tr.setAttribute('draggable', 'true');
-        tr.innerHTML = `<td><span class='drag-handle'>☰</span></td><td><input type='checkbox' data-bulk-id='${r.id}' ${r.selected ? 'checked' : ''}></td><td><span class='pill ${st === 'ready' ? 'good' : 'warn'}'>${st}</span></td><td>${r.path || ''}</td><td>${r.series || hints.series || ''}</td><td>${r.issue || hints.issue || ''}</td><td>${r.year || hints.year || ''}</td><td>${best}</td><td>${conf}%</td><td>${note}</td>`;
+        tr.setAttribute('draggable', appState.bulkManualOrder ? 'true' : 'false');
+        tr.innerHTML = `<td><span class='drag-handle'>☰</span></td><td><input type='checkbox' data-bulk-id='${r.id}' ${r.selected ? 'checked' : ''}></td><td><button class='bulk-chip' type='button' data-hold-id='${r.id}'>Hold</button></td><td><span class='pill ${st === 'ready' ? 'good' : 'warn'}'>${st}</span></td><td>${r.path || ''}</td><td>${r.series || hints.series || ''}</td><td>${r.issue || hints.issue || ''}</td><td>${r.year || hints.year || ''}</td><td>${best}</td><td>${conf}%</td><td>${note}</td>`;
         tr.onclick = () => selectBulkRow(r.id, conf, st, best, note);
         tr.ondragstart = ev => {
           appState.bulkDragId = r.id;
@@ -3216,9 +3293,40 @@ INDEX_HTML = """<!doctype html>
           cb.onclick = ev => ev.stopPropagation();
           cb.onchange = () => { r.selected = !!cb.checked; };
         }
+        const holdBtn = tr.querySelector("button[data-hold-id]");
+        if (holdBtn) {
+          holdBtn.onclick = ev => { ev.stopPropagation(); bulkToggleHold(r.id, true); };
+        }
         tbody.appendChild(tr);
       });
-      updateBulkCounters(appState.bulkRows || []);
+
+      const holdBody = document.querySelector('#bulkHoldingTable tbody');
+      if (holdBody) {
+        holdBody.innerHTML = '';
+        holdingRows().forEach((r) => {
+          const hints = r.hints || parseFilenameHints(r.path || '');
+          const st = classifyBulkRow(r);
+          const conf = confidenceForBulkRow(r);
+          const best = (r.series || hints.series || '') + ((r.issue || hints.issue) ? (' #' + (r.issue || hints.issue)) : '');
+          const note = r.writeState === 'written' ? 'Written' : (r.writeError || r.error || '-');
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td><input type='checkbox' data-hold-check='${r.id}' ${r.selected ? 'checked' : ''}></td><td><button class='bulk-chip' type='button' data-restore-id='${r.id}'>Restore</button></td><td>${st}</td><td>${r.path || ''}</td><td>${r.series || hints.series || ''}</td><td>${r.issue || hints.issue || ''}</td><td>${r.year || hints.year || ''}</td><td>${best}</td><td>${conf}%</td><td>${note}</td>`;
+          const cbh = tr.querySelector("input[data-hold-check]");
+          if (cbh) cbh.onchange = () => { r.selected = !!cbh.checked; };
+          const rb = tr.querySelector("button[data-restore-id]");
+          if (rb) rb.onclick = () => bulkToggleHold(r.id, false);
+          holdBody.appendChild(tr);
+        });
+      }
+
+      const activeRowsNow = (appState.bulkRows || []).filter(passesBulkFilter);
+      const activeAll = document.getElementById('bulkSelectAllActive');
+      if (activeAll) activeAll.checked = !!activeRowsNow.length && activeRowsNow.every(r => r.selected);
+      const holdRowsNow = holdingRows();
+      const holdAll = document.getElementById('bulkSelectAllHolding');
+      if (holdAll) holdAll.checked = !!holdRowsNow.length && holdRowsNow.every(r => r.selected);
+
+      updateBulkCounters((appState.bulkRows || []).filter(r => !r.held));
       renderBulkPreview();
       syncBulkEditorFromSelection();
     }
@@ -3627,6 +3735,7 @@ INDEX_HTML = """<!doctype html>
       setStatus('Bulk write started (' + label + '): ' + rows.length + ' file(s)…', false);
 
       for (const row of rows) {
+        if (row.held) { skipped += 1; continue; }
         const patch = buildBulkMetadataPatch(row);
         if (!Object.keys(patch).length) {
           row.writeState = 'skipped';
@@ -3636,7 +3745,11 @@ INDEX_HTML = """<!doctype html>
         }
         try {
           const bulkNaming = namingState('bulk');
-          const namingTarget = buildBulkNamingWriteTarget(row);
+          let namingTarget = buildBulkNamingWriteTarget(row);
+          if (namingTarget && !isAbsolutePath(namingTarget)) {
+            const srcDir = normalizeSlashPath(row.path || '').replace(/\/[^/]*$/, '');
+            namingTarget = combinePath(srcDir, namingTarget);
+          }
           const primaryTarget = (bulkNaming.apply && bulkNaming.override && namingTarget) ? namingTarget : '';
 
           async function postBulkWrite(target, saveMode='copy') {

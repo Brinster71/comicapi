@@ -82,8 +82,14 @@ def test_index_html_has_bulk_apply_sort_and_drag_controls():
     assert "function bulkIncrementFieldFromSelected(field)" in html
     assert "Incremented ' + field + ' down" in html
     assert "function bulkSortCurrentRows(showMessage=true)" in html
-    assert "tr.setAttribute('draggable', 'true');" in html
+    assert "tr.setAttribute('draggable', appState.bulkManualOrder ? 'true' : 'false');" in html
     assert "function bulkMoveRow(dragId, targetId)" in html
+    assert "function bulkToggleHold(rowId, held)" in html
+    assert "function bulkToggleSelectAll(lane, checked)" in html
+    assert "function bulkSortByColumn(key)" in html
+    assert "id='bulkSelectAllActive'" in html
+    assert "id='bulkSelectAllHolding'" in html
+    assert "id='bulkHoldingTable'" in html
     assert "onclick='bulkWriteSelected()'" in html
     assert "onclick='bulkRetryFailed()'" in html
     assert "function buildBulkMetadataPatch(row)" in html
