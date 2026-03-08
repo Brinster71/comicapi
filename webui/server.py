@@ -1586,7 +1586,7 @@ INDEX_HTML = """<!doctype html>
       const picked = String(pickedFolderName || '').trim();
       if (!picked) return current;
       if (!current) return '';
-      const normalized = current.replace(/\\\\/g, '/').replace(/\\/+$/, '');
+      const normalized = current.replace(/\\\\/g, '/').replace(/\/+$/, '');
       if (!normalized || !normalized.startsWith('/')) return '';
       const parts = normalized.split('/').filter(Boolean);
       const base = parts.length ? parts[parts.length - 1] : '';
@@ -1597,7 +1597,7 @@ INDEX_HTML = """<!doctype html>
     function extractPickedFolderNameFromFiles(files) {
       const pickedFiles = Array.isArray(files) ? files : [];
       if (!pickedFiles.length) return '';
-      const rel = String(pickedFiles[0].webkitRelativePath || pickedFiles[0].name || '').replace(/\\/g, '/');
+      const rel = String(pickedFiles[0].webkitRelativePath || pickedFiles[0].name || '').replace(/\\\\/g, '/');
       if (!rel) return '';
       const parts = rel.split('/').filter(Boolean);
       return parts.length ? parts[0] : '';
@@ -2074,11 +2074,11 @@ INDEX_HTML = """<!doctype html>
       }).replace(/[\\\\/]+/g, '/').trim();
 
       const withExt = (!ext || /\.[A-Za-z0-9]+$/.test(replaced)) ? replaced : (replaced + ext);
-      const normalizedSource = String(sourcePath || '').replace(/\\/g, '/').trim();
+      const normalizedSource = String(sourcePath || '').replace(/\\\\/g, '/').trim();
       const sourceDir = normalizedSource.includes('/')
         ? normalizedSource.slice(0, normalizedSource.lastIndexOf('/'))
         : '';
-      const normalizedTarget = String(withExt || '').replace(/\\/g, '/').replace(/\/+$/, '');
+      const normalizedTarget = String(withExt || '').replace(/\\\\/g, '/').replace(/\/+$/, '');
       if (!normalizedTarget) return '';
 
       // Keep absolute paths as-is (Unix, UNC, or Windows drive paths).

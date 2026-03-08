@@ -33,6 +33,7 @@ def test_index_html_has_library_picker_field_update_and_write_error_status():
     html = server.INDEX_HTML
     assert "function combinePickedFolderWithCurrentPath" in html
     assert "current.replace(/\\\\/g, '/')" in html
+    assert ".replace(/\\/+$/, '')" in html
     assert "if (base && base.toLowerCase() === picked.toLowerCase()) return normalized;" in html
     assert "clearScanResults();" in html
     assert "id='rootPathPicker'" in html
