@@ -590,18 +590,48 @@ INDEX_HTML = """<!doctype html>
     }
 
     .start-gate {
-      border: 1px solid var(--line);
+      border: 1px solid var(--line-strong);
       border-radius: 1rem;
-      background: var(--card);
+      background: rgba(255,255,255,.68);
       box-shadow: var(--shadow);
-      padding: .9rem;
-      margin-bottom: .8rem;
+      padding: 1rem;
+      margin: 1.5rem auto;
+      max-width: 980px;
     }
-    .start-gate.is-hidden { display:none; }
-    .start-gate-actions { display:flex; gap:.55rem; flex-wrap:wrap; margin-top:.5rem; }
-    .start-selection-list { border:1px solid var(--line); border-radius:.7rem; background:rgba(255,255,255,.55); max-height:14rem; overflow:auto; }
-    .start-selection-item { display:flex; justify-content:space-between; gap:.6rem; width:100%; border:none; background:transparent; padding:.45rem .55rem; text-align:left; cursor:pointer; color:var(--ink); }
-    .start-selection-item:hover { background:rgba(255,255,255,.75); }
+    .start-gate-actions { display:flex; gap:.55rem; flex-wrap:wrap; margin:.55rem 0; }
+    .start-selection-meta {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:.5rem;
+      margin:.35rem 0;
+    }
+    .start-selection-list {
+      border:1px solid var(--line);
+      border-radius:.7rem;
+      background:rgba(255,255,255,.7);
+      max-height:24rem;
+      overflow:auto;
+    }
+    .start-selection-item {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:.7rem;
+      width:100%;
+      border:none;
+      border-bottom:1px solid rgba(74,43,0,.08);
+      background:transparent;
+      padding:.5rem .65rem;
+      text-align:left;
+      cursor:pointer;
+      color:var(--ink);
+    }
+    .start-selection-item:last-child { border-bottom:none; }
+    .start-selection-item:hover { background:rgba(255,255,255,.9); }
+    .start-entry-main { display:flex; align-items:center; gap:.55rem; min-width:0; }
+    .start-entry-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .start-entry-actions { display:flex; align-items:center; gap:.35rem; }
     @media (max-width: 900px){
       .grid2 { grid-template-columns: 1fr; }
       .mapping-grid { grid-template-columns: 22px 130px 1fr; }
@@ -646,15 +676,17 @@ INDEX_HTML = """<!doctype html>
 
   <div id='startTab' class='tab-panel active'>
   <section id='startGate' class='start-gate'>
-    <h3 style='margin-top:0;'>Selection</h3>
-    <div class='small muted'>Browse a server folder. Clicking a folder opens Bulk; clicking a comic file opens Single.</div>
+    <h3 style='margin:0;'>Select folder or file</h3>
+    <div class='small muted'>Choose a folder to open Bulk mode, or choose a comic file to open Single mode.</div>
     <div class='start-gate-actions'>
       <input id='startPathInput' type='text' placeholder='/path/to/comics' style='min-width:24rem;'>
       <button type='button' onclick='loadStartSelectionList()'>Select</button>
-      <button type='button' onclick='dismissStartGate()'>Skip selection</button>
+      <button type='button' onclick='loadStartSelectionList()'>Refresh</button>
     </div>
-    <div id='startSelectionMeta' class='small muted' style='margin-top:.4rem;'></div>
-    <div id='startSelectionList' class='small muted' style='margin-top:.4rem;'>Enter a folder path and press Select.</div>
+    <div class='start-selection-meta'>
+      <div id='startSelectionMeta' class='small muted'></div>
+    </div>
+    <div id='startSelectionList' class='small muted'>Enter a folder path and press Open.</div>
   </section>
   </div>
 
@@ -2659,10 +2691,6 @@ INDEX_HTML = """<!doctype html>
     }
 
 
-    function dismissStartGate() {
-      switchTab('single');
-    }
-
     async function openSelectionEntry(entry) {
       const p = String((entry && entry.path) || '').trim();
       if (!p) return;
@@ -2671,7 +2699,7 @@ INDEX_HTML = """<!doctype html>
         document.getElementById('bulkRootPath').value = p;
         document.getElementById('bulkRootLabel').textContent = p;
         switchTab('bulk');
-        setStatus('Folder selected. Starting bulk scan…', false);
+        setStatus('Folder selected. Opening bulk mode…', false);
         await bulkScanFromRoot();
         return;
       }
@@ -2684,7 +2712,7 @@ INDEX_HTML = """<!doctype html>
         }
         switchTab('single');
         setWritePathFromSelected();
-        setStatus('File selected. You can now assess/read/write metadata in Single mode.', false);
+        setStatus('File selected. Single mode opened.', false);
       }
     }
 
@@ -2702,21 +2730,21 @@ INDEX_HTML = """<!doctype html>
       list.className = 'start-selection-list';
       list.innerHTML = '';
       entries.forEach((entry) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'start-selection-item';
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'start-selection-item';
         const icon = entry.is_dir ? '📁' : '📘';
         const kind = entry.is_dir ? 'folder → Bulk' : 'file → Single';
-        btn.innerHTML = `<span>${icon} ${entry.name || ''}</span><span class='small muted'>${kind}</span>`;
-        btn.onclick = () => openSelectionEntry(entry);
-        list.appendChild(btn);
+        row.innerHTML = `<div class='start-entry-main'><span>${icon}</span><span class='start-entry-name'>${entry.name || ''}</span></div><div class='start-entry-actions'><span class='small muted'>${kind}</span></div>`;
+        row.onclick = () => openSelectionEntry(entry);
+        list.appendChild(row);
       });
     }
 
-    async function loadStartSelectionList() {
+    async function loadStartSelectionList(explicitPath) {
       setStatus('Loading selection list…', false);
       const input = document.getElementById('startPathInput');
-      const rootPath = (input && input.value ? input.value : '').trim() || (document.getElementById('rootPath').value || '').trim() || '/';
+      const rootPath = String(explicitPath || (input && input.value ? input.value : '') || (document.getElementById('rootPath').value || '') || '/').trim() || '/';
       if (input) input.value = rootPath;
       try {
         const res = await fetch('/api/start_selection?path=' + encodeURIComponent(rootPath));
