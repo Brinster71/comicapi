@@ -139,3 +139,5 @@ def test_index_html_has_naming_and_recursive_scan_controls():
     assert "function toggleNamingOverride(mode)" in html
     assert "function buildSingleNamingWriteTarget(path)" in html
     assert "function buildBulkNamingWriteTarget(row)" in html
+    assert "if (pattern) {" in html
+    assert "const preview = (document.getElementById('bulkNamingPreview').value || '').trim();" in html

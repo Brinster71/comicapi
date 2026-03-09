@@ -2444,8 +2444,12 @@ INDEX_HTML = """<!doctype html>
       const preview = (document.getElementById('bulkNamingPreview').value || '').trim();
       if (preview) return preview;
       const pattern = (document.getElementById('bulkNamingPattern').value || '').trim();
-      if (!pattern) return '';
-      return renderNamingFromPattern(pattern, buildBulkNamingSourceMetadata(row), (row && row.path) || '');
+      if (pattern) {
+        return renderNamingFromPattern(pattern, buildBulkNamingSourceMetadata(row), (row && row.path) || '');
+      }
+      const preview = (document.getElementById('bulkNamingPreview').value || '').trim();
+      if (preview) return preview;
+      return '';
     }
 
     function applySelectedComicVineFields() {
