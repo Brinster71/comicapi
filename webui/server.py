@@ -686,7 +686,7 @@ INDEX_HTML = """<!doctype html>
     <div class='start-selection-meta'>
       <div id='startSelectionMeta' class='small muted'></div>
     </div>
-    <div id='startSelectionList' class='small muted'>Enter a folder path and press Open.</div>
+    <div id='startSelectionList' class='small muted'>Enter a folder path and press Select.</div>
   </section>
   </div>
 
@@ -697,9 +697,10 @@ INDEX_HTML = """<!doctype html>
   <div class='row'>
     <label>Library path:</label>
     <input id='rootPath' type='text' placeholder='/path/to/comics'>
+    <button id='browseLibraryBtn' type='button' onclick='openBrowsePage("single")'>Browse…</button>
     <button onclick='scanLibrary()'>Scan</button>
   </div>
-  <div class='muted small'>Enter server paths manually (browse buttons removed to avoid browser path-picker issues).</div>
+  <div class='muted small'>Use Browse to navigate folders and click files/folders directly, or enter an absolute server path manually.</div>
 
   <div class='row'>
     <label class='stacked-checkbox'><input id='scanRecursive' type='checkbox' checked><span class='stacked-text'><span>Recurse</span><span>over subfolders</span></span></label>
@@ -958,6 +959,7 @@ INDEX_HTML = """<!doctype html>
         <div class='row bulk-search-row'>
           <label>Library path:</label>
           <input id='bulkRootPath' type='text' placeholder='/path/to/comics'>
+          <button id='browseBulkLibraryBtn' type='button' onclick='openBrowsePage("bulk")'>Browse…</button>
           <button onclick='copySinglePathToBulk()'>Use single path</button>
           <label class='stacked-checkbox'><input id='bulkScanRecursive' type='checkbox' checked><span class='stacked-text'><span>Recurse</span><span>over subfolders</span></span></label>
           <button onclick='bulkScanFromRoot()'>Scan batch</button>
@@ -2714,17 +2716,6 @@ INDEX_HTML = """<!doctype html>
         setWritePathFromSelected();
         setStatus('File selected. Single mode opened.', false);
       }
-      await openSelectionEntry(entry);
-    }
-
-    function openSelectionParent() {
-      const input = document.getElementById('startPathInput');
-      const current = normalizeSlashPath((input && input.value) ? input.value : '').replace(/\/$/, '');
-      if (!current || current === '/') {
-        if (input) input.value = '/';
-        loadStartSelectionList('/');
-        return;
-      }
       const parent = current.replace(/\/[^/]+$/, '') || '/';
       if (input) input.value = parent;
       loadStartSelectionList(parent);
@@ -2772,6 +2763,55 @@ INDEX_HTML = """<!doctype html>
       } catch (err) {
         setStatus('Selection load failed: ' + (err && err.message ? err.message : 'request failed'), true);
       }
+    }
+
+    function openBrowsePage(target) {
+      const mode = target === 'bulk' ? 'bulk' : 'single';
+      const inputId = mode === 'bulk' ? 'bulkRootPath' : 'rootPath';
+      const base = (document.getElementById(inputId).value || '').trim() || '/';
+      window.location.href = '/browse?path=' + encodeURIComponent(base) + '&target=' + encodeURIComponent(mode);
+    }
+
+    async function applyBrowseSelectionFromQuery() {
+      const params = new URLSearchParams(window.location.search || '');
+      const kind = String(params.get('selected_kind') || '').trim().toLowerCase();
+      const selectedPath = String(params.get('selected_path') || '').trim();
+      const target = String(params.get('selected_target') || 'single').trim().toLowerCase();
+      if (!kind || !selectedPath) return false;
+
+      if (kind === 'dir') {
+        document.getElementById('rootPath').value = selectedPath;
+        document.getElementById('bulkRootPath').value = selectedPath;
+        document.getElementById('bulkRootLabel').textContent = selectedPath;
+        if (target === 'bulk') {
+          switchTab('bulk');
+          setStatus('Folder selected. Opening bulk mode…', false);
+          await bulkScanFromRoot();
+        } else {
+          switchTab('single');
+          setStatus('Folder selected. Ready in Single mode.', false);
+        }
+      } else if (kind === 'file') {
+        document.getElementById('comicPath').value = selectedPath;
+        const folder = normalizeSlashPath(selectedPath).replace(/\/[^/]*$/, '');
+        if (folder) {
+          document.getElementById('rootPath').value = folder;
+          copySinglePathToBulk();
+        }
+        switchTab('single');
+        setWritePathFromSelected();
+        setStatus('File selected. Single mode opened.', false);
+      } else {
+        return false;
+      }
+
+      params.delete('selected_kind');
+      params.delete('selected_path');
+      params.delete('selected_target');
+      const qs = params.toString();
+      const cleanUrl = window.location.pathname + (qs ? ('?' + qs) : '');
+      window.history.replaceState({}, '', cleanUrl);
+      return true;
     }
 
     function switchTab(tab) {
@@ -4064,12 +4104,15 @@ INDEX_HTML = """<!doctype html>
     renderBulkRecordBank();
     setBulkGapVisibility(false);
     renderBulkFieldGap(null);
-    switchTab('start');
-    const startInput = document.getElementById('startPathInput');
-    if (startInput && !startInput.value.trim()) {
-      startInput.value = (document.getElementById('rootPath').value || '').trim() || '/';
-    }
-    loadStartSelectionList();
+    applyBrowseSelectionFromQuery().then((applied) => {
+      if (applied) return;
+      switchTab('start');
+      const startInput = document.getElementById('startPathInput');
+      if (startInput && !startInput.value.trim()) {
+        startInput.value = (document.getElementById('rootPath').value || '').trim() || '/';
+      }
+      loadStartSelectionList();
+    });
   </script>
 
   <div id='pathPickOverlay' role='dialog' aria-modal='true' aria-labelledby='pathPickMsg' style='display:none'>
@@ -4082,6 +4125,104 @@ INDEX_HTML = """<!doctype html>
       </div>
     </div>
   </div>
+</body>
+</html>"""
+
+
+
+BROWSE_HTML = """<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>Browse Path</title>
+  <style>
+    body { margin:0; font-family: Inter, system-ui, sans-serif; background:#071633; color:#e8eefc; }
+    .page { max-width:860px; margin:2rem auto; padding:0 1rem; }
+    .card { background:#1f2d44; border:1px solid #334863; border-radius:.8rem; padding:1rem; margin:0 0 1rem; }
+    h1 { margin:.2rem 0 .4rem; font-size:3rem; }
+    h2 { margin:.1rem 0 .6rem; font-size:2.6rem; }
+    a { color:#8ec8ff; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .btns { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem; }
+    .btn { display:inline-block; background:#2563eb; color:#fff; padding:.35rem .65rem; border-radius:.45rem; }
+    .btn.ok { background:#65a30d; }
+    ul { margin:.2rem 0 0; padding-left:1.05rem; }
+    li { margin:.45rem 0; }
+    .muted { color:#b8c6de; }
+  </style>
+</head>
+<body>
+  <div class='page'>
+    <h1>Browse Path</h1>
+    <div class='muted'>Click folders to move through the tree. Click files for single-file conversion.</div>
+    <div class='card'>
+      <h2>Current path</h2>
+      <div id='currentPath' class='muted'></div>
+      <div class='btns'>
+        <a class='btn' href='/'>🏠 Start page</a>
+        <a id='parentLink' class='btn' href='/browse'>⬆ Parent</a>
+        <a id='selectFolderLink' class='btn ok' href='/'>✅ Select this folder</a>
+      </div>
+    </div>
+    <div class='card'>
+      <h2>Entries</h2>
+      <ul id='entries'><li><span class='muted'>Loading…</span></li></ul>
+    </div>
+  </div>
+  <script>
+    function norm(p){
+      const v = String(p || '').trim();
+      if (!v) return '/';
+      return v.startsWith('/') ? v : '/' + v;
+    }
+    function parentOf(p){
+      const n = norm(p).replace(/\/$/, '');
+      if (!n || n === '/') return '/';
+      return n.replace(/\/[^/]+$/, '') || '/';
+    }
+    function qs(obj){
+      const params = new URLSearchParams(obj);
+      return '?' + params.toString();
+    }
+    async function boot(){
+      const params = new URLSearchParams(window.location.search || '');
+      const target = ((params.get('target') || 'single') + '').toLowerCase() === 'bulk' ? 'bulk' : 'single';
+      const path = norm(params.get('path') || '/');
+      document.getElementById('currentPath').textContent = path;
+      document.getElementById('parentLink').href = '/browse' + qs({ path: parentOf(path), target });
+      document.getElementById('selectFolderLink').href = '/' + qs({ selected_kind: 'dir', selected_path: path, selected_target: target });
+
+      const res = await fetch('/api/start_selection?path=' + encodeURIComponent(path));
+      const data = await res.json();
+      const holder = document.getElementById('entries');
+      if (!res.ok || data.error) {
+        holder.innerHTML = `<li><span class='muted'>${(data && data.error) ? data.error : 'Failed to load entries.'}</span></li>`;
+        return;
+      }
+      const entries = Array.isArray(data.entries) ? data.entries : [];
+      if (!entries.length) {
+        holder.innerHTML = "<li><span class='muted'>No folders or supported comic files here.</span></li>";
+        return;
+      }
+      holder.innerHTML = '';
+      entries.forEach((entry) => {
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        const p = String(entry.path || '');
+        if (entry.is_dir) {
+          a.textContent = `📁 ${entry.name || ''} (folder)`;
+          a.href = '/browse' + qs({ path: p, target });
+        } else {
+          a.textContent = `📘 ${entry.name || ''}`;
+          a.href = '/' + qs({ selected_kind: 'file', selected_path: p, selected_target: target });
+        }
+        li.appendChild(a);
+        holder.appendChild(li);
+      });
+    }
+    boot();
+  </script>
 </body>
 </html>"""
 
@@ -4541,6 +4682,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
+
+        if parsed.path == "/browse":
+            body = BROWSE_HTML.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
 
         if parsed.path == "/":
             body = INDEX_HTML.encode("utf-8")
