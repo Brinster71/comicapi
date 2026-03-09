@@ -58,7 +58,7 @@ def test_index_html_has_diagnostics_and_write_browse_hooks():
     html = server.INDEX_HTML
     assert "id='diagBanner'" in html
     assert "async function loadRuntimeDiagnostics()" in html
-    assert "fetch('/api/version')" in html
+    assert "fetch('/api/version', { signal: controller.signal })" in html
     assert "onclick='browseWritePath()'" not in html
     assert "function onWriteFilePicked(evt)" in html
     assert "setStatus('Scanning library…', false);" in html

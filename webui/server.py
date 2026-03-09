@@ -2611,12 +2611,15 @@ INDEX_HTML = """<!doctype html>
       const el = document.getElementById('diagBanner');
       if (!el) return;
       try {
-        const res = await fetch('/api/version');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch('/api/version', { signal: controller.signal });
+        clearTimeout(timeoutId);
         const data = await res.json();
         const features = (data.features || []).join(', ') || 'none';
         el.textContent = `Running ${data.server_version || 'ComicWebUI'} build ${data.git_commit || 'unknown'} from ${data.module_path || ''}; features: ${features}.`;
       } catch (_) {
-        el.textContent = 'Runtime diagnostics unavailable. Confirm server process/check-out if UI looks stale.';
+        el.textContent = 'Runtime diagnostics unavailable (request timed out or failed). You can continue using selection and scan controls.';
       }
     }
 
@@ -2659,6 +2662,7 @@ INDEX_HTML = """<!doctype html>
     }
 
     async function startWithFolderSelection() {
+      setStatus('Opening folder selector…', false);
       const current = (document.getElementById('bulkRootPath').value || document.getElementById('rootPath').value || '').trim() || '/home/travis/comics';
       const picked = await showInlinePathEntry('Enter absolute folder path to scan for bulk processing:', current);
       if (!picked) {
@@ -2679,6 +2683,7 @@ INDEX_HTML = """<!doctype html>
     }
 
     async function startWithFileSelection() {
+      setStatus('Opening file selector…', false);
       const current = (document.getElementById('comicPath').value || '').trim() || '/home/travis/comics/example.cbz';
       const picked = await showInlinePathEntry('Enter absolute comic file path on the server:', current);
       if (!picked) {
