@@ -637,12 +637,14 @@ INDEX_HTML = """<!doctype html>
       </div>
     </div>
     <div class='tabs'>
-      <button id='tabSingleBtn' class='tab-btn active' onclick='switchTab("single")'>Single</button>
+      <button id='tabStartBtn' class='tab-btn active' onclick='switchTab("start")'>Start</button>
+      <button id='tabSingleBtn' class='tab-btn' onclick='switchTab("single")'>Single</button>
       <button id='tabBulkBtn' class='tab-btn' onclick='switchTab("bulk")'>Bulk identification</button>
     </div>
   </div>
 
 
+  <div id='startTab' class='tab-panel active'>
   <section id='startGate' class='start-gate'>
     <h3 style='margin-top:0;'>Selection</h3>
     <div class='small muted'>Browse a server folder. Clicking a folder opens Bulk; clicking a comic file opens Single.</div>
@@ -654,8 +656,9 @@ INDEX_HTML = """<!doctype html>
     <div id='startSelectionMeta' class='small muted' style='margin-top:.4rem;'></div>
     <div id='startSelectionList' class='small muted' style='margin-top:.4rem;'>Enter a folder path and press Select.</div>
   </section>
+  </div>
 
-  <div id='singleTab' class='tab-panel active'>
+  <div id='singleTab' class='tab-panel'>
   <div id='diagBanner' class='diag'>Loading runtime diagnostics…</div>
   <p class='muted'>Single-comic workflow: scan, inspect detected metadata, choose series then issue, map fields, apply, write.</p>
 
@@ -2656,14 +2659,8 @@ INDEX_HTML = """<!doctype html>
     }
 
 
-    function showStartGate(show) {
-      const gate = document.getElementById('startGate');
-      if (!gate) return;
-      gate.classList.toggle('is-hidden', !show);
-    }
-
     function dismissStartGate() {
-      showStartGate(false);
+      switchTab('single');
     }
 
     async function openSelectionEntry(entry) {
@@ -2673,7 +2670,6 @@ INDEX_HTML = """<!doctype html>
         document.getElementById('rootPath').value = p;
         document.getElementById('bulkRootPath').value = p;
         document.getElementById('bulkRootLabel').textContent = p;
-        showStartGate(false);
         switchTab('bulk');
         setStatus('Folder selected. Starting bulk scan…', false);
         await bulkScanFromRoot();
@@ -2686,7 +2682,6 @@ INDEX_HTML = """<!doctype html>
           document.getElementById('rootPath').value = folder;
           copySinglePathToBulk();
         }
-        showStartGate(false);
         switchTab('single');
         setWritePathFromSelected();
         setStatus('File selected. You can now assess/read/write metadata in Single mode.', false);
@@ -2738,16 +2733,20 @@ INDEX_HTML = """<!doctype html>
     }
 
     function switchTab(tab) {
-      const single = tab !== 'bulk';
+      const active = (tab === 'bulk' || tab === 'single') ? tab : 'start';
+      const startPanel = document.getElementById('startTab');
       const singlePanel = document.getElementById('singleTab');
       const bulkPanel = document.getElementById('bulkTab');
+      const startBtn = document.getElementById('tabStartBtn');
       const singleBtn = document.getElementById('tabSingleBtn');
       const bulkBtn = document.getElementById('tabBulkBtn');
-      if (singlePanel) singlePanel.classList.toggle('active', single);
-      if (bulkPanel) bulkPanel.classList.toggle('active', !single);
-      if (singleBtn) singleBtn.classList.toggle('active', single);
-      if (bulkBtn) bulkBtn.classList.toggle('active', !single);
-      localStorage.setItem('comicapi.activeTab', single ? 'single' : 'bulk');
+      if (startPanel) startPanel.classList.toggle('active', active === 'start');
+      if (singlePanel) singlePanel.classList.toggle('active', active === 'single');
+      if (bulkPanel) bulkPanel.classList.toggle('active', active === 'bulk');
+      if (startBtn) startBtn.classList.toggle('active', active === 'start');
+      if (singleBtn) singleBtn.classList.toggle('active', active === 'single');
+      if (bulkBtn) bulkBtn.classList.toggle('active', active === 'bulk');
+      localStorage.setItem('comicapi.activeTab', active);
     }
 
     function copySinglePathToBulk() {
@@ -4023,14 +4022,12 @@ INDEX_HTML = """<!doctype html>
     renderBulkRecordBank();
     setBulkGapVisibility(false);
     renderBulkFieldGap(null);
-    switchTab(localStorage.getItem('comicapi.activeTab') === 'bulk' ? 'bulk' : 'single');
-    const hasSelection = !!((document.getElementById('comicPath').value || '').trim() || (document.getElementById('bulkRootPath').value || '').trim());
-    showStartGate(!hasSelection);
+    switchTab('start');
     const startInput = document.getElementById('startPathInput');
     if (startInput && !startInput.value.trim()) {
       startInput.value = (document.getElementById('rootPath').value || '').trim() || '/';
     }
-    if (!hasSelection) loadStartSelectionList();
+    loadStartSelectionList();
   </script>
 
   <div id='pathPickOverlay' role='dialog' aria-modal='true' aria-labelledby='pathPickMsg' style='display:none'>
