@@ -2511,8 +2511,6 @@ INDEX_HTML = """<!doctype html>
       if (pattern) {
         return renderNamingFromPattern(pattern, buildBulkNamingSourceMetadata(row), (row && row.path) || '');
       }
-      const preview = (document.getElementById('bulkNamingPreview').value || '').trim();
-      if (preview) return preview;
       return '';
     }
 
