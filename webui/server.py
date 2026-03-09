@@ -2484,6 +2484,12 @@ INDEX_HTML = """<!doctype html>
       else showJson('metadataJson', md);
     }
 
+    function formatWriteApiError(payload, fallbackStatus) {
+      const base = (payload && payload.error) ? payload.error : ('HTTP ' + fallbackStatus);
+      const reason = (payload && payload.reason) ? (' (' + payload.reason + ')') : '';
+      return base + reason;
+    }
+
     async function writeFromJsonPayload(payload) {
       const rawPath = document.getElementById('comicPath').value.trim();
       const rawWritePath = (document.getElementById('writePath').value || '').trim();
@@ -2541,7 +2547,7 @@ INDEX_HTML = """<!doctype html>
         const firstMode = (singleNaming.apply && namingTarget && primaryTarget === namingTarget) ? 'hardlink' : 'copy';
         const first = await postWrite(primaryTarget, firstMode);
         if (!first.res.ok || !first.out.ok) {
-          setStatus('Write failed: ' + (first.out.error || ('HTTP ' + first.res.status)), true);
+          setStatus('Write failed: ' + formatWriteApiError(first.out, first.res.status), true);
           return;
         }
 
@@ -2549,7 +2555,7 @@ INDEX_HTML = """<!doctype html>
         if (singleNaming.apply && !singleNaming.override && namingTarget && namingTarget !== firstPath) {
           const mirror = await postWrite(namingTarget, 'hardlink');
           if (!mirror.res.ok || !mirror.out.ok) {
-            setStatus('Primary write succeeded, naming mirror failed: ' + (mirror.out.error || ('HTTP ' + mirror.res.status)), true);
+            setStatus('Primary write succeeded, naming mirror failed: ' + formatWriteApiError(mirror.out, mirror.res.status), true);
             return;
           }
           const sidecarMirror = mirror.out.sidecar_path ? (' ; sidecar: ' + mirror.out.sidecar_path) : '';
@@ -3848,7 +3854,7 @@ INDEX_HTML = """<!doctype html>
           const primary = await postBulkWrite(primaryTarget, primaryMode);
           if (!primary.res.ok || !primary.payload || !primary.payload.ok) {
             row.writeState = 'failed';
-            row.writeError = (primary.payload && primary.payload.error) ? primary.payload.error : ('HTTP ' + primary.res.status);
+            row.writeError = formatWriteApiError(primary.payload, primary.res.status);
             failed += 1;
             continue;
           }
@@ -3858,7 +3864,7 @@ INDEX_HTML = """<!doctype html>
             const mirror = await postBulkWrite(namingTarget, 'hardlink');
             if (!mirror.res.ok || !mirror.payload || !mirror.payload.ok) {
               row.writeState = 'failed';
-              row.writeError = 'Primary write succeeded; naming mirror failed: ' + ((mirror.payload && mirror.payload.error) ? mirror.payload.error : ('HTTP ' + mirror.res.status));
+              row.writeError = 'Primary write succeeded; naming mirror failed: ' + formatWriteApiError(mirror.payload, mirror.res.status);
               failed += 1;
               continue;
             }
@@ -4005,6 +4011,22 @@ def apply_metadata(md, patch):
     for k, v in patch.items():
         setattr(md, k, v)
 
+
+
+
+def metadata_write_block_reason(ca, style_enum):
+    if getattr(ca, "archive_type", None) == ComicArchive.ArchiveType.Unknown:
+        return "archive type is unknown or unsupported for in-file metadata writes"
+    if getattr(ca, "isRar", lambda: False)() and style_enum == MetaDataStyle.CBI:
+        return "ComicBookInfo writes are not supported for RAR archives"
+    if getattr(ca, "isRar", lambda: False)() and getattr(ca, "rar_exe_path", None) is None:
+        return "RAR metadata writes require a configured rar executable on the server"
+    if not os.access(getattr(ca, "path", ""), os.W_OK):
+        return "source archive is not writable by the server process"
+    parent = os.path.dirname(os.path.abspath(getattr(ca, "path", "")))
+    if parent and not os.access(parent, os.W_OK):
+        return "destination directory is not writable by the server process"
+    return "archive backend reported this file/style combination is not writable"
 
 def detect_style(ca):
     for style_name in ("CIX", "CBI", "COMET"):
@@ -4565,20 +4587,45 @@ class Handler(BaseHTTPRequestHandler):
             ca = ComicArchive(write_target_path, default_image_path=write_target_path)
             detected_style = detect_style(ca)
             use_style = choose_style(style, detected_style)
-            md = ca.readMetadata(STYLE_MAP[use_style])
+            style_enum = STYLE_MAP[use_style]
+            archive_info = archive_diagnostics(ca, write_target_path)
+
+            if not ca.isWritableForStyle(style_enum):
+                reason = metadata_write_block_reason(ca, style_enum)
+                return self._json(400, {
+                    "ok": False,
+                    "error": "Archive is not writable for in-file metadata updates",
+                    "reason": reason,
+                    "path": path,
+                    "written_path": target_path,
+                    "style": use_style,
+                    "detected_style": detected_style,
+                    "archive": archive_info,
+                })
+
+            md = ca.readMetadata(style_enum)
 
             # IMPORTANT: Always create fresh metadata from patch, don't rely on isEmpty
             # Only use existing metadata as a base if patch is truly empty
             if patch:  # If user provided metadata in the patch
-                if getattr(md, "isEmpty", False):
+                if callable(getattr(md, "isEmpty", None)) and md.isEmpty():
                     md = ca.metadataFromFilename(parse_scan_info=True)
                 apply_metadata(md, patch)
             else:  # No metadata provided in patch
                 return self._json(400, {"error": "metadata patch is required", "path": path, "written_path": target_path})
 
-            ok = ca.writeMetadata(md, STYLE_MAP[use_style])
+            ok = ca.writeMetadata(md, style_enum)
             if not ok:
-                return self._json(500, {"ok": False, "error": "Metadata write returned false", "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
+                return self._json(500, {
+                    "ok": False,
+                    "error": "Metadata write failed before archive update completed",
+                    "reason": metadata_write_block_reason(ca, style_enum),
+                    "path": path,
+                    "written_path": target_path,
+                    "style": use_style,
+                    "detected_style": detected_style,
+                    "archive": archive_info,
+                })
 
             final_written_path = write_target_path
             if save_mode == "hardlink" and target_path != path:
