@@ -632,14 +632,6 @@ INDEX_HTML = """<!doctype html>
     .start-entry-main { display:flex; align-items:center; gap:.55rem; min-width:0; }
     .start-entry-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .start-entry-actions { display:flex; align-items:center; gap:.35rem; }
-    .start-entry-open {
-      background:rgba(255,255,255,.9);
-      border:1px solid var(--line);
-      color:var(--ink);
-      font-size:.78rem;
-      padding:.24rem .5rem;
-      border-radius:.5rem;
-    }
     @media (max-width: 900px){
       .grid2 { grid-template-columns: 1fr; }
       .mapping-grid { grid-template-columns: 22px 130px 1fr; }
@@ -688,12 +680,11 @@ INDEX_HTML = """<!doctype html>
     <div class='small muted'>Choose a folder to open Bulk mode, or choose a comic file to open Single mode.</div>
     <div class='start-gate-actions'>
       <input id='startPathInput' type='text' placeholder='/path/to/comics' style='min-width:24rem;'>
-      <button type='button' onclick='loadStartSelectionList()'>Open</button>
-      <button type='button' onclick='openSelectionParent()'>Up one level</button>
+      <button type='button' onclick='loadStartSelectionList()'>Select</button>
+      <button type='button' onclick='loadStartSelectionList()'>Refresh</button>
     </div>
     <div class='start-selection-meta'>
       <div id='startSelectionMeta' class='small muted'></div>
-      <button id='startRefreshBtn' class='start-entry-open' type='button' onclick='loadStartSelectionList()'>Refresh</button>
     </div>
     <div id='startSelectionList' class='small muted'>Enter a folder path and press Open.</div>
   </section>
@@ -2704,9 +2695,12 @@ INDEX_HTML = """<!doctype html>
       const p = String((entry && entry.path) || '').trim();
       if (!p) return;
       if (entry.is_dir) {
-        const input = document.getElementById('startPathInput');
-        if (input) input.value = p;
-        await loadStartSelectionList(p);
+        document.getElementById('rootPath').value = p;
+        document.getElementById('bulkRootPath').value = p;
+        document.getElementById('bulkRootLabel').textContent = p;
+        switchTab('bulk');
+        setStatus('Folder selected. Opening bulk mode…', false);
+        await bulkScanFromRoot();
         return;
       }
       if (entry.is_file) {
@@ -2719,20 +2713,6 @@ INDEX_HTML = """<!doctype html>
         switchTab('single');
         setWritePathFromSelected();
         setStatus('File selected. Single mode opened.', false);
-      }
-    }
-
-    async function chooseSelectionEntry(entry) {
-      const p = String((entry && entry.path) || '').trim();
-      if (!p) return;
-      if (entry.is_dir) {
-        document.getElementById('rootPath').value = p;
-        document.getElementById('bulkRootPath').value = p;
-        document.getElementById('bulkRootLabel').textContent = p;
-        switchTab('bulk');
-        setStatus('Folder selected. Opening bulk mode…', false);
-        await bulkScanFromRoot();
-        return;
       }
       await openSelectionEntry(entry);
     }
@@ -2764,19 +2744,13 @@ INDEX_HTML = """<!doctype html>
       list.className = 'start-selection-list';
       list.innerHTML = '';
       entries.forEach((entry) => {
-        const row = document.createElement('div');
+        const row = document.createElement('button');
+        row.type = 'button';
         row.className = 'start-selection-item';
         const icon = entry.is_dir ? '📁' : '📘';
-        const kind = entry.is_dir ? 'folder' : 'file';
-        row.innerHTML = `<div class='start-entry-main'><span>${icon}</span><span class='start-entry-name'>${entry.name || ''}</span></div><div class='start-entry-actions'><span class='small muted'>${kind}</span><button type='button' class='start-entry-open'>Open</button></div>`;
+        const kind = entry.is_dir ? 'folder → Bulk' : 'file → Single';
+        row.innerHTML = `<div class='start-entry-main'><span>${icon}</span><span class='start-entry-name'>${entry.name || ''}</span></div><div class='start-entry-actions'><span class='small muted'>${kind}</span></div>`;
         row.onclick = () => openSelectionEntry(entry);
-        const openBtn = row.querySelector('.start-entry-open');
-        if (openBtn) {
-          openBtn.onclick = (ev) => {
-            ev.stopPropagation();
-            chooseSelectionEntry(entry);
-          };
-        }
         list.appendChild(row);
       });
     }
