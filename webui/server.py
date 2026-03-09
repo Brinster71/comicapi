@@ -11,6 +11,9 @@ from urllib.parse import parse_qs, urlparse
 
 from .comicvine import ComicVineClient
 from ..comicarchive import ComicArchive, MetaDataStyle
+from ..comicinfoxml import ComicInfoXml
+from ..comicbookinfo import ComicBookInfo
+from ..comet import CoMet
 
 INDEX_HTML = """<!doctype html>
 <html>
@@ -37,7 +40,7 @@ INDEX_HTML = """<!doctype html>
         radial-gradient(circle at bottom right, rgba(251,191,36,.28), transparent 30%),
         radial-gradient(circle at 80% 20%, rgba(253,224,71,.22), transparent 22%),
         linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 52%, var(--bg3) 100%);
-      overflow-x: hidden;
+      overflow-x: auto;
     }
     .page {
       max-width: var(--max);
@@ -159,6 +162,10 @@ INDEX_HTML = """<!doctype html>
       width: 100%;
       margin-top: .5rem;
       background: transparent;
+    }
+    .table-scroll {
+      width: 100%;
+      overflow-x: auto;
     }
     th, td {
       border: none;
@@ -374,6 +381,13 @@ INDEX_HTML = """<!doctype html>
       backdrop-filter: blur(10px);
       padding: .7rem;
     }
+    .bulk-controls-panel {
+      position: sticky;
+      top: .7rem;
+      align-self: start;
+      max-height: calc(100vh - 1.4rem);
+      overflow: auto;
+    }
     .bulk-panel.is-collapsed {
       display: none;
     }
@@ -418,6 +432,12 @@ INDEX_HTML = """<!doctype html>
       color: var(--muted);
       margin-top: .35rem;
     }
+    .bulk-sort-btn { background:none; border:none; color:inherit; font:inherit; font-weight:700; cursor:pointer; padding:0; }
+    .bulk-sort-btn:hover { text-decoration:underline; }
+    .bulk-record-bank { border:1px solid var(--line); border-radius:.8rem; background:rgba(255,255,255,.58); padding:.45rem; margin-top:.5rem; max-height:34vh; overflow:auto; }
+    .bulk-record-item { border:1px solid var(--line); border-radius:.55rem; padding:.35rem .45rem; margin-bottom:.35rem; background:rgba(255,255,255,.82); cursor:grab; }
+    .bulk-record-item:last-child { margin-bottom:0; }
+    .bulk-record-item small { display:block; color:var(--muted); }
     .naming-toolbar {
       display:flex;
       justify-content:space-between;
@@ -573,6 +593,11 @@ INDEX_HTML = """<!doctype html>
       .mapping-grid { grid-template-columns: 22px 130px 1fr; }
       input[type=text] { min-width: 14rem; }
       .bulk-layout { grid-template-columns: 1fr; }
+      .bulk-controls-panel {
+        position: static;
+        max-height: none;
+        overflow: visible;
+      }
       .bulk-cards { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
       .bulk-field-row { grid-template-columns: 1fr; }
       .gap-grid { grid-template-columns: 1fr; }
@@ -610,10 +635,9 @@ INDEX_HTML = """<!doctype html>
   <div class='row'>
     <label>Library path:</label>
     <input id='rootPath' type='text' placeholder='/path/to/comics'>
-    <button id='browseLibraryBtn' onclick='browseLibraryPath()'>Browse…</button>
-    <input id='rootPathPicker' type='file' webkitdirectory directory style='display:none' onchange='onLibraryFolderPicked(event)'>
     <button onclick='scanLibrary()'>Scan</button>
   </div>
+  <div class='muted small'>Enter server paths manually (browse buttons removed to avoid browser path-picker issues).</div>
 
   <div class='row'>
     <label class='stacked-checkbox'><input id='scanRecursive' type='checkbox' checked><span class='stacked-text'><span>Recurse</span><span>over subfolders</span></span></label>
@@ -622,12 +646,8 @@ INDEX_HTML = """<!doctype html>
   <div class='row'>
     <label>Selected file:</label>
     <input id='comicPath' type='text' placeholder='/path/to/file.cbz'>
-    <button onclick='browseComicFile()'>Browse…</button>
-    <input id='comicPathPicker' type='file' accept='.cbz,.cbr,.cbt,.pdf,.zip,.rar' style='display:none' onchange='onComicFilePicked(event)'>
     <label>Write to:</label>
     <input id='writePath' type='text' placeholder='/path/to/output.cbz (defaults to selected file)'>
-    <button onclick='browseWritePath()'>Browse…</button>
-    <input id='writePathPicker' type='file' accept='.cbz,.cbr,.cbt,.pdf,.zip,.rar,.json' style='display:none' onchange='onWriteFilePicked(event)'>
     <button onclick='setWritePathFromSelected()'>Use selected file</button>
     <label>Style:</label>
     <select id='style' class='tight'>
@@ -798,8 +818,8 @@ INDEX_HTML = """<!doctype html>
         <button onclick='previousNamingPattern("single")'>Previous</button>
       </div>
     </div>
-    <div class='muted small'>Use variables like {Series}, {IssueNumber}, {VolumeNumber}, {Year}, {Title}, {Publisher}, {Month}, {Day}. Missing values fall back to variable names in preview.</div>
-    <textarea id='singleNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...' readonly></textarea>
+    <div class='muted small'>Use variables like {Series}, {Issue}, {IssueNumber}, {Title}, {IssueName}, {Publisher}, {Year}, {StartYear}, {PublishedYear}, {Volume}, {VolumeNumber}, {Month}, {Day}, {Writer}, {Editor}, {CoverArtist}, {Penciller}, {Inker}, {Colorist}, {Letterer}, {Language}, {StoryArc}, {StoryArcNumber}, {Tags}, {PageCount}, {ISBN}, {Barcode}, {ComicVineIssueId}, {ComicVineSeriesId}, {Description}. Names with spaces also work (e.g. {Start Year}). Missing values fall back to token text in preview.</div>
+    <textarea id='singleNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...'></textarea>
     <div class='naming-bottom'>
       <button onclick='clearNamingSection("single")'>Clear</button>
       <button id='singleNamingOverrideBtn' onclick='toggleNamingOverride("single")'>Override</button>
@@ -830,15 +850,15 @@ INDEX_HTML = """<!doctype html>
       <section id='bulkPreviewPanel' class='bulk-panel bulk-preview is-collapsed' style='grid-column: 1 / -1;'>
         <h4 class='bulk-title'>Batch mapped metadata preview</h4>
         <div class='small muted'>Core mapped values are shown directly for fast review before write.</div>
-        <table id='bulkPreviewTable'>
+        <div class='table-scroll'><table id='bulkPreviewTable'>
           <thead>
             <tr><th>Path</th><th>Series</th><th>Issue</th><th>Year</th><th>Publisher</th><th>Volume</th><th>Status</th><th>Confidence</th><th>Write</th></tr>
           </thead>
           <tbody></tbody>
-        </table>
+        </table></div>
       </section>
 
-      <aside class='bulk-panel'>
+      <aside class='bulk-panel bulk-controls-panel'>
         <h4 class='bulk-title'>Batch controls</h4>
         <div class='row'>
           <label>Match mode:</label>
@@ -864,6 +884,11 @@ INDEX_HTML = """<!doctype html>
         <div class='row'>
           <label><input type='checkbox' id='bulkRulePublisher' checked> Auto-fill publisher/date/volume on high confidence</label>
         </div>
+        <h5 style='margin:.6rem 0 .35rem;'>ComicVine metadata records</h5>
+        <div class='small muted'>Drag a record onto a file row to apply that full record's metadata.</div>
+        <div id='bulkRecordBank' class='bulk-record-bank'>
+          <div id='bulkRecordList' class='small muted'>Search/select a ComicVine series and issues to load draggable records.</div>
+        </div>
       </aside>
 
       <main class='bulk-panel'>
@@ -871,8 +896,6 @@ INDEX_HTML = """<!doctype html>
         <div class='row bulk-search-row'>
           <label>Library path:</label>
           <input id='bulkRootPath' type='text' placeholder='/path/to/comics'>
-          <button id='browseBulkLibraryBtn' onclick='browseBulkLibraryPath()'>Browse…</button>
-          <input id='bulkRootPathPicker' type='file' webkitdirectory directory style='display:none' onchange='onBulkLibraryFolderPicked(event)'>
           <button onclick='copySinglePathToBulk()'>Use single path</button>
           <label class='stacked-checkbox'><input id='bulkScanRecursive' type='checkbox' checked><span class='stacked-text'><span>Recurse</span><span>over subfolders</span></span></label>
           <button onclick='bulkScanFromRoot()'>Scan batch</button>
@@ -893,6 +916,7 @@ INDEX_HTML = """<!doctype html>
           <button onclick='bulkApplyCvToSelected()'>Apply to selected row</button>
           <button onclick='bulkApplyCvToBatch("selected")'>Apply to checked rows (by issue)</button>
           <button onclick='bulkApplyCvToBatch("visible")'>Apply to visible rows (by issue)</button>
+          <button onclick='bulkApplyCvToBatch("active")'>Apply to all active rows (by issue)</button>
           <span id='bulkCvHint' class='small muted'></span>
         </div>
         <div class='bulk-actions'>
@@ -903,12 +927,26 @@ INDEX_HTML = """<!doctype html>
           <button class='bulk-chip' onclick='bulkFilter("written")'>Written</button>
           <button class='bulk-chip' onclick='bulkFilter("skip")'>Skipped</button>
         </div>
-        <table id='bulkQueueTable'>
+        <div class='row small'>
+          <label><input id='bulkSelectAllActive' type='checkbox' onchange='bulkToggleSelectAll("active", this.checked)'> Select all active</label>
+          <span class='muted'>Click column headers to sort active rows.</span>
+        </div>
+        <div class='table-scroll'><table id='bulkQueueTable'>
           <thead>
-            <tr><th>↕</th><th></th><th>Status</th><th>Path</th><th>Series</th><th>Issue</th><th>Year</th><th>Best match</th><th>Confidence</th><th>Notes</th></tr>
+            <tr><th>↕</th><th></th><th>Hold</th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("status")'>Status</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("path")'>Path</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("series")'>Series</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("issue")'>Issue</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("year")'>Year</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("best")'>Best match</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("confidence")'>Confidence</button></th><th><button type='button' class='bulk-sort-btn' onclick='bulkSortByColumn("note")'>Notes</button></th></tr>
           </thead>
           <tbody></tbody>
-        </table>
+        </table></div>
+        <div class='row small' style='margin-top:.5rem;'>
+          <label><input id='bulkSelectAllHolding' type='checkbox' onchange='bulkToggleSelectAll("holding", this.checked)'> Select all holding</label>
+          <span class='muted'>Holding rows are excluded from active operations.</span>
+        </div>
+        <div class='table-scroll'><table id='bulkHoldingTable'>
+          <thead>
+            <tr><th></th><th>Restore</th><th>Status</th><th>Path</th><th>Series</th><th>Issue</th><th>Year</th><th>Best match</th><th>Confidence</th><th>Notes</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table></div>
         <details>
           <summary>Naming Convention (bulk)</summary>
           <div class='naming-toolbar'>
@@ -923,8 +961,8 @@ INDEX_HTML = """<!doctype html>
               <button onclick='previousNamingPattern("bulk")'>Previous</button>
             </div>
           </div>
-          <div class='muted small'>Use variables like {Series}, {IssueNumber}, {VolumeNumber}, {Year}, {Title}, {Publisher}, {Month}, {Day}. Missing values fall back to variable names in preview.</div>
-          <textarea id='bulkNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...' readonly></textarea>
+          <div class='muted small'>Use variables like {Series}, {Issue}, {IssueNumber}, {Title}, {IssueName}, {Publisher}, {Year}, {StartYear}, {PublishedYear}, {Volume}, {VolumeNumber}, {Month}, {Day}, {Writer}, {Editor}, {CoverArtist}, {Penciller}, {Inker}, {Colorist}, {Letterer}, {Language}, {StoryArc}, {StoryArcNumber}, {Tags}, {PageCount}, {ISBN}, {Barcode}, {ComicVineIssueId}, {ComicVineSeriesId}, {Description}. Names with spaces also work (e.g. {Start Year}). Missing values fall back to token text in preview.</div>
+          <textarea id='bulkNamingPreview' class='naming-preview' placeholder='Naming preview will appear here...'></textarea>
           <div class='naming-bottom'>
             <button onclick='clearNamingSection("bulk")'>Clear</button>
             <button id='bulkNamingOverrideBtn' onclick='toggleNamingOverride("bulk")'>Override</button>
@@ -1009,6 +1047,7 @@ INDEX_HTML = """<!doctype html>
       bulkFilter: 'all',
       bulkDragId: null,
       bulkManualOrder: false,
+      bulkSort: { key: 'issue', dir: 'asc' },
       bulkCvData: null,
       bulkCvIssues: [],
       bulkGapVisible: false,
@@ -1034,6 +1073,28 @@ INDEX_HTML = """<!doctype html>
         writeEl.value = comic;
         appState.writePathManual = false;
       }
+    }
+
+
+    function isAbsolutePath(path) {
+      const p = String(path || '').trim();
+      return /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(p);
+    }
+
+    function normalizeSlashPath(path) {
+      return String(path || '').trim().replace(/\\\\/g, '/');
+    }
+
+    function combinePath(baseDir, childPath) {
+      const base = normalizeSlashPath(baseDir).replace(/\/+$/, '');
+      const child = normalizeSlashPath(childPath).replace(/^\/+/, '');
+      if (!base) return child;
+      return (base + '/' + child).replace(/\/+/g, '/');
+    }
+
+
+    function hasSupportedArchiveExtension(path) {
+      return /\.(?:cbz|cbr|cbt|pdf|zip|rar)$/i.test(String(path || '').trim());
     }
 
     function setComicPathValue(path) {
@@ -1586,18 +1647,20 @@ INDEX_HTML = """<!doctype html>
       const picked = String(pickedFolderName || '').trim();
       if (!picked) return current;
       if (!current) return '';
-      const normalized = current.replace(/\\\\/g, '/').replace(/\\/+$/, '');
+      const normalized = current.replace(/\\\\/g, '/').replace(/\/+$/, '');
       if (!normalized || !normalized.startsWith('/')) return '';
       const parts = normalized.split('/').filter(Boolean);
       const base = parts.length ? parts[parts.length - 1] : '';
       if (base && base.toLowerCase() === picked.toLowerCase()) return normalized;
-      return normalized + '/' + picked;
+      if (!parts.length) return '/' + picked;
+      parts[parts.length - 1] = picked;
+      return '/' + parts.join('/');
     }
 
     function extractPickedFolderNameFromFiles(files) {
       const pickedFiles = Array.isArray(files) ? files : [];
       if (!pickedFiles.length) return '';
-      const rel = String(pickedFiles[0].webkitRelativePath || pickedFiles[0].name || '').replace(/\\/g, '/');
+      const rel = String(pickedFiles[0].webkitRelativePath || pickedFiles[0].name || '').replace(/\\\\/g, '/');
       if (!rel) return '';
       const parts = rel.split('/').filter(Boolean);
       return parts.length ? parts[0] : '';
@@ -1655,6 +1718,27 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
+
+    async function browseDirectoryPathBrowser(previous) {
+      if (!window || typeof window.showDirectoryPicker !== 'function') {
+        return { path: '', folder: '', usedBrowserPicker: false, cancelled: false, error: 'Browser directory picker unavailable' };
+      }
+      try {
+        const suggested = String(previous || '').trim();
+        const opts = { mode: 'read' };
+        if (suggested) opts.startIn = 'documents';
+        const handle = await window.showDirectoryPicker(opts);
+        const folder = String((handle && handle.name) ? handle.name : '').trim();
+        return { path: '', folder: folder, usedBrowserPicker: true, cancelled: false, error: '' };
+      } catch (err) {
+        const name = err && err.name ? String(err.name) : '';
+        if (name === 'AbortError') {
+          return { path: '', folder: '', usedBrowserPicker: true, cancelled: true, error: '' };
+        }
+        return { path: '', folder: '', usedBrowserPicker: true, cancelled: false, error: (err && err.message) ? String(err.message) : 'Browser directory picker failed' };
+      }
+    }
+
     function clearScanResults() {
       const tbody = document.querySelector('#scanTable tbody');
       if (tbody) tbody.innerHTML = '';
@@ -1674,6 +1758,32 @@ INDEX_HTML = """<!doctype html>
       const btn = document.getElementById('browseLibraryBtn');
       const previous = (input.value || '').trim();
       clearScanResults();
+      if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
+      let browserPicked;
+      try {
+        setStatus('Opening browser folder picker…', false);
+        browserPicked = await browseDirectoryPathBrowser(previous);
+      } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('btn-busy'); btn.textContent = 'Browse…'; }
+      }
+      if (browserPicked && browserPicked.folder) {
+        const resolved = applyPickedFolderToInput(input, browserPicked.folder, previous);
+        if (resolved.startsWith('/')) {
+          input.value = resolved;
+          savePersistentFields();
+          setStatus('Folder selected: ' + resolved + '. Click Scan.', false);
+          return;
+        }
+        input.value = browserPicked.folder;
+        savePersistentFields();
+        setStatus('Folder selected in browser: ' + browserPicked.folder + '. Update to an absolute server path before Scan if needed.', true);
+        return;
+      }
+      if (browserPicked && browserPicked.cancelled) {
+        setStatus('Folder selection cancelled.', true);
+        return;
+      }
+
       setStatus('Opening folder picker — look for a dialog window on your desktop…', false);
       if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
       let picked;
@@ -1714,6 +1824,12 @@ INDEX_HTML = """<!doctype html>
           setStatus('Folder selected: ' + resolved + '. Click Scan.', false);
           return;
         }
+
+        input.value = pickedFolder;
+        clearScanResults();
+        savePersistentFields();
+        setStatus('Folder selected in browser: ' + pickedFolder + '. Update to an absolute server path before Scan if needed.', true);
+        return;
       }
 
       setStatus('Browser folder picker not available; trying native picker…', false);
@@ -1742,6 +1858,32 @@ INDEX_HTML = """<!doctype html>
       const input = document.getElementById('bulkRootPath');
       const btn = document.getElementById('browseBulkLibraryBtn');
       const previous = (input.value || '').trim();
+      if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
+      let browserPicked;
+      try {
+        setStatus('Opening browser folder picker…', false);
+        browserPicked = await browseDirectoryPathBrowser(previous);
+      } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('btn-busy'); btn.textContent = 'Browse…'; }
+      }
+      if (browserPicked && browserPicked.folder) {
+        const resolved = applyPickedFolderToInput(input, browserPicked.folder, previous);
+        if (resolved.startsWith('/')) {
+          input.value = resolved;
+          document.getElementById('bulkRootLabel').textContent = resolved || '(not set)';
+          setStatus('Bulk folder selected: ' + resolved + '. Click Scan batch.', false);
+          return;
+        }
+        input.value = browserPicked.folder;
+        document.getElementById('bulkRootLabel').textContent = browserPicked.folder || '(not set)';
+        setStatus('Bulk folder selected in browser: ' + browserPicked.folder + '. Update to an absolute server path before Scan batch if needed.', true);
+        return;
+      }
+      if (browserPicked && browserPicked.cancelled) {
+        setStatus('Bulk folder selection cancelled.', true);
+        return;
+      }
+
       setStatus('Opening bulk folder picker — look for a dialog window on your desktop…', false);
       if (btn) { btn.disabled = true; btn.classList.add('btn-busy'); btn.textContent = 'Picking…'; }
       let picked;
@@ -1781,6 +1923,11 @@ INDEX_HTML = """<!doctype html>
           setStatus('Bulk folder selected: ' + resolved + '. Click Scan batch.', false);
           return;
         }
+
+        input.value = pickedFolder;
+        document.getElementById('bulkRootLabel').textContent = pickedFolder || '(not set)';
+        setStatus('Bulk folder selected in browser: ' + pickedFolder + '. Update to an absolute server path before Scan batch if needed.', true);
+        return;
       }
 
       setStatus('Browser folder picker not available; trying native picker…', false);
@@ -2036,33 +2183,69 @@ INDEX_HTML = """<!doctype html>
 
     function buildNamingValueMap(sourceMeta) {
       const md = sourceMeta || {};
-      return {
-        Series: sanitizeNamingValue(md.series || md.Series || ''),
-        IssueNumber: sanitizeNamingValue(md.issue || md.IssueNumber || ''),
-        VolumeNumber: sanitizeNamingValue(md.volume || md.VolumeNumber || ''),
-        Year: sanitizeNamingValue(md.year || md.publishedYear || md.Year || ''),
-        Title: sanitizeNamingValue(md.title || md.issueName || md.Title || ''),
-        Publisher: sanitizeNamingValue(md.publisher || md.Publisher || ''),
-        Month: sanitizeNamingValue(md.month || md.Month || ''),
-        Day: sanitizeNamingValue(md.day || md.Day || ''),
+      const values = {
+        Series: md.series || md.Series || '',
+        Issue: md.issue || md.Issue || '',
+        IssueNumber: md.issue || md.IssueNumber || '',
+        Volume: md.volume || md.Volume || '',
+        VolumeNumber: md.volume || md.VolumeNumber || '',
+        Year: md.year || md.publishedYear || md.Year || '',
+        StartYear: md.startYear || md.StartYear || '',
+        PublishedYear: md.publishedYear || md.year || md.PublishedYear || '',
+        Title: md.title || md.Title || '',
+        IssueName: md.issueName || md.IssueName || md.title || '',
+        Publisher: md.publisher || md.Publisher || '',
+        Month: md.month || md.Month || '',
+        Day: md.day || md.Day || '',
+        Writer: md.writer || md.Writer || '',
+        Editor: md.editor || md.Editor || '',
+        CoverArtist: md.coverArtist || md.CoverArtist || '',
+        Penciller: md.penciller || md.Penciller || '',
+        Inker: md.inker || md.Inker || '',
+        Colorist: md.colorist || md.Colorist || '',
+        Letterer: md.letterer || md.Letterer || '',
+        Language: md.language || md.Language || '',
+        StoryArc: md.storyArc || md.StoryArc || '',
+        StoryArcNumber: md.storyArcNumber || md.StoryArcNumber || '',
+        Tags: md.tags || md.Tags || '',
+        PageCount: md.pageCount || md.PageCount || '',
+        ISBN: md.isbn || md.ISBN || '',
+        Barcode: md.barcode || md.Barcode || '',
+        ComicVineIssueId: md.comicVineIssueId || md.ComicVineIssueId || '',
+        ComicVineSeriesId: md.comicVineSeriesId || md.ComicVineSeriesId || '',
+        Description: md.description || md.Description || '',
       };
+      const out = {};
+      Object.keys(values).forEach((key) => {
+        out[key] = sanitizeNamingValue(values[key]);
+      });
+      return out;
+    }
+
+    function namingTokenKey(token) {
+      return String(token || '').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
     }
 
     function renderNamingFromPattern(pattern, sourceMeta, sourcePath) {
-      const extMatch = String(sourcePath || '').match(/(\\.[A-Za-z0-9]+)$/);
+      const extMatch = String(sourcePath || '').match(/(\.[A-Za-z0-9]+)$/);
       const ext = extMatch ? extMatch[1] : '';
       const tokens = buildNamingValueMap(sourceMeta);
-      const replaced = String(pattern || '').replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (_, token) => {
-        const value = tokens[token];
+      const normalizedTokenMap = {};
+      Object.keys(tokens).forEach((key) => {
+        normalizedTokenMap[namingTokenKey(key)] = tokens[key];
+      });
+      const replaced = String(pattern || '').replace(/\{([^}]+)\}/g, (_, rawToken) => {
+        const token = String(rawToken || '').trim();
+        const value = tokens[token] || normalizedTokenMap[namingTokenKey(token)] || '';
         return value ? value : token;
-      }).replace(/[\\\\/]+/g, '/').trim();
+      }).replace(/[\\/]+/g, '/').trim();
 
       const withExt = (!ext || /\.[A-Za-z0-9]+$/.test(replaced)) ? replaced : (replaced + ext);
-      const normalizedSource = String(sourcePath || '').replace(/\\/g, '/').trim();
+      const normalizedSource = String(sourcePath || '').replace(/\\\\/g, '/').trim();
       const sourceDir = normalizedSource.includes('/')
         ? normalizedSource.slice(0, normalizedSource.lastIndexOf('/'))
         : '';
-      const normalizedTarget = String(withExt || '').replace(/\\/g, '/').replace(/\/+$/, '');
+      const normalizedTarget = String(withExt || '').replace(/\\\\/g, '/').replace(/\/+$/, '');
       if (!normalizedTarget) return '';
 
       // Keep absolute paths as-is (Unix, UNC, or Windows drive paths).
@@ -2081,12 +2264,32 @@ INDEX_HTML = """<!doctype html>
       return {
         series: (document.getElementById('map_series') && document.getElementById('map_series').value) || loaded.series || '',
         issue: issueNumber,
+        issueName: (document.getElementById('map_issue_name') && document.getElementById('map_issue_name').value) || loaded.issueName || '',
         volume: (document.getElementById('map_volume') && document.getElementById('map_volume').value) || loaded.volume || '1',
         year: publishedYear || startYear,
+        startYear: startYear,
+        publishedYear: publishedYear,
         title: (document.getElementById('map_title') && document.getElementById('map_title').value) || loaded.title || loaded.issueName || '',
         publisher: (document.getElementById('map_publisher') && document.getElementById('map_publisher').value) || loaded.publisher || '',
         month: (document.getElementById('map_month') && document.getElementById('map_month').value) || loaded.month || '',
         day: (document.getElementById('map_day') && document.getElementById('map_day').value) || loaded.day || '',
+        writer: (document.getElementById('map_writer') && document.getElementById('map_writer').value) || loaded.writer || '',
+        editor: (document.getElementById('map_editor') && document.getElementById('map_editor').value) || loaded.editor || '',
+        coverArtist: (document.getElementById('map_cover_artist') && document.getElementById('map_cover_artist').value) || loaded.coverArtist || '',
+        storyArc: (document.getElementById('map_story_arc') && document.getElementById('map_story_arc').value) || loaded.storyArc || '',
+        storyArcNumber: (document.getElementById('map_story_arc_num') && document.getElementById('map_story_arc_num').value) || loaded.storyArcNumber || '',
+        tags: (document.getElementById('map_tags') && document.getElementById('map_tags').value) || loaded.tags || '',
+        pageCount: (document.getElementById('map_page_count') && document.getElementById('map_page_count').value) || loaded.pageCount || '',
+        isbn: (document.getElementById('map_isbn') && document.getElementById('map_isbn').value) || loaded.isbn || '',
+        barcode: (document.getElementById('map_barcode') && document.getElementById('map_barcode').value) || loaded.barcode || '',
+        language: (document.getElementById('map_language') && document.getElementById('map_language').value) || loaded.language || '',
+        penciller: (document.getElementById('map_penciller') && document.getElementById('map_penciller').value) || loaded.penciller || '',
+        inker: (document.getElementById('map_inker') && document.getElementById('map_inker').value) || loaded.inker || '',
+        colorist: (document.getElementById('map_colorist') && document.getElementById('map_colorist').value) || loaded.colorist || '',
+        letterer: (document.getElementById('map_letterer') && document.getElementById('map_letterer').value) || loaded.letterer || '',
+        comicVineIssueId: (document.getElementById('map_issue_id') && document.getElementById('map_issue_id').value) || loaded.comicVineIssueId || '',
+        comicVineSeriesId: (document.getElementById('map_series_id') && document.getElementById('map_series_id').value) || loaded.comicVineSeriesId || '',
+        description: (document.getElementById('map_description') && document.getElementById('map_description').value) || loaded.description || '',
       };
     }
 
@@ -2102,12 +2305,32 @@ INDEX_HTML = """<!doctype html>
       return {
         series: r.series || '',
         issue: r.issue || '',
+        issueName: r.issueName || '',
         volume: r.volume || '1',
         year: r.year || r.publishedYear || '',
+        startYear: r.startYear || '',
+        publishedYear: r.publishedYear || r.year || '',
         title: r.title || r.issueName || '',
         publisher: r.publisher || '',
         month: r.month || '',
         day: r.day || '',
+        writer: r.writer || '',
+        editor: r.editor || '',
+        coverArtist: r.coverArtist || '',
+        storyArc: r.storyArc || '',
+        storyArcNumber: r.storyArcNumber || '',
+        tags: r.tags || '',
+        pageCount: r.pageCount || '',
+        isbn: r.isbn || '',
+        barcode: r.barcode || '',
+        language: r.language || '',
+        penciller: r.penciller || '',
+        inker: r.inker || '',
+        colorist: r.colorist || '',
+        letterer: r.letterer || '',
+        comicVineIssueId: r.comicVineIssueId || '',
+        comicVineSeriesId: r.comicVineSeriesId || '',
+        description: r.description || '',
       };
     }
 
@@ -2206,6 +2429,8 @@ INDEX_HTML = """<!doctype html>
     function buildSingleNamingWriteTarget(path) {
       const state = namingState('single');
       if (!state.apply) return '';
+      const preview = (document.getElementById('singleNamingPreview').value || '').trim();
+      if (preview) return preview;
       const pattern = (document.getElementById('singleNamingPattern').value || '').trim();
       if (!pattern) return '';
       return renderNamingFromPattern(pattern, buildSingleNamingSourceMetadata(), path || '');
@@ -2215,8 +2440,12 @@ INDEX_HTML = """<!doctype html>
       const state = namingState('bulk');
       if (!state.apply) return '';
       const pattern = (document.getElementById('bulkNamingPattern').value || '').trim();
-      if (!pattern) return '';
-      return renderNamingFromPattern(pattern, buildBulkNamingSourceMetadata(row), (row && row.path) || '');
+      if (pattern) {
+        return renderNamingFromPattern(pattern, buildBulkNamingSourceMetadata(row), (row && row.path) || '');
+      }
+      const preview = (document.getElementById('bulkNamingPreview').value || '').trim();
+      if (preview) return preview;
+      return '';
     }
 
     function applySelectedComicVineFields() {
@@ -2252,24 +2481,51 @@ INDEX_HTML = """<!doctype html>
     }
 
     async function writeFromJsonPayload(payload) {
-      const path = document.getElementById('comicPath').value.trim();
-      const writePath = (document.getElementById('writePath').value || '').trim();
+      const rawPath = document.getElementById('comicPath').value.trim();
+      const rawWritePath = (document.getElementById('writePath').value || '').trim();
+      const rootPath = (document.getElementById('rootPath').value || '').trim();
       const style = document.getElementById('style').value;
-      if (!path) return alert('Select or enter a comic file path first.');
+      if (!rawPath) return alert('Select or enter a comic file path first.');
+
+      let path = rawPath;
+      if (!isAbsolutePath(path) && isAbsolutePath(rootPath)) {
+        path = combinePath(rootPath, path);
+      }
+      if (!isAbsolutePath(path)) {
+        setStatus('Write failed: selected file path must be absolute on the server. Set Library path and reselect, or enter absolute path manually.', true);
+        return;
+      }
+      if (!hasSupportedArchiveExtension(path)) {
+        setStatus('Write failed: selected path must point to a comic archive file (.cbz/.cbr/.cbt/.pdf/.zip/.rar), not a folder.', true);
+        return;
+      }
+
+      let writePath = rawWritePath;
+      if (writePath && !isAbsolutePath(writePath)) {
+        const sourceDir = normalizeSlashPath(path).replace(/\/[^/]*$/, '');
+        writePath = combinePath(sourceDir, writePath);
+      }
+
       const patch = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : payload;
       setStatus('Writing metadata to file…', false);
       try {
+        document.getElementById('comicPath').value = path;
+        if (writePath) document.getElementById('writePath').value = writePath;
         const singleNaming = namingState('single');
-        const namingTarget = buildSingleNamingWriteTarget(path);
+        let namingTarget = buildSingleNamingWriteTarget(path);
+        if (namingTarget && !isAbsolutePath(namingTarget)) {
+          const sourceDir = normalizeSlashPath(path).replace(/\/[^/]*$/, '');
+          namingTarget = combinePath(sourceDir, namingTarget);
+        }
         const primaryTarget = (singleNaming.apply && singleNaming.override && namingTarget)
           ? namingTarget
           : (writePath || '');
 
-        async function postWrite(target) {
+        async function postWrite(target, saveMode='copy') {
           const res = await fetch('/api/write', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ path, write_path: target, style, metadata: patch })
+            body: JSON.stringify({ path, write_path: target, style, metadata: patch, save_mode: saveMode })
           });
           const raw = await res.text();
           let out;
@@ -2278,8 +2534,8 @@ INDEX_HTML = """<!doctype html>
           return { res, out };
         }
 
-        const first = await postWrite(primaryTarget);
-        showJson('metadataJson', first.out);
+        const firstMode = (singleNaming.apply && namingTarget && primaryTarget === namingTarget) ? 'hardlink' : 'copy';
+        const first = await postWrite(primaryTarget, firstMode);
         if (!first.res.ok || !first.out.ok) {
           setStatus('Write failed: ' + (first.out.error || ('HTTP ' + first.res.status)), true);
           return;
@@ -2287,17 +2543,18 @@ INDEX_HTML = """<!doctype html>
 
         const firstPath = first.out.written_path || first.out.path || path;
         if (singleNaming.apply && !singleNaming.override && namingTarget && namingTarget !== firstPath) {
-          const mirror = await postWrite(namingTarget);
-          showJson('metadataJson', mirror.out);
+          const mirror = await postWrite(namingTarget, 'hardlink');
           if (!mirror.res.ok || !mirror.out.ok) {
             setStatus('Primary write succeeded, naming mirror failed: ' + (mirror.out.error || ('HTTP ' + mirror.res.status)), true);
             return;
           }
-          setStatus('Metadata written to primary and naming target: ' + firstPath + ' ; ' + (mirror.out.written_path || namingTarget), false);
+          const sidecarMirror = mirror.out.sidecar_path ? (' ; sidecar: ' + mirror.out.sidecar_path) : '';
+          setStatus('Metadata written to primary and naming target: ' + firstPath + ' ; ' + (mirror.out.written_path || namingTarget) + sidecarMirror, false);
           return;
         }
 
-        setStatus('Metadata written to: ' + firstPath, false);
+        const sidecarNote = first.out.sidecar_path ? (' (sidecar: ' + first.out.sidecar_path + ')') : '';
+        setStatus('Metadata written to: ' + firstPath + sidecarNote, false);
       } catch (err) {
         setStatus('Write failed: ' + (err && err.message ? err.message : 'request failed'), true);
       }
@@ -2446,6 +2703,7 @@ INDEX_HTML = """<!doctype html>
         seriesSel.appendChild(opt);
       });
       setBulkCvHint('Series loaded. Batch apply maps each row by its issue number; selected issue is fallback only.');
+      renderBulkRecordBank();
       onBulkCvSeriesSelected();
     }
 
@@ -2507,6 +2765,7 @@ INDEX_HTML = """<!doctype html>
       appState.bulkCvIssues = issues;
       if (!issues.length) {
         setBulkCvHint('No issues found for selected series.');
+        renderBulkRecordBank();
         return;
       }
 
@@ -2614,6 +2873,34 @@ INDEX_HTML = """<!doctype html>
       return out;
     }
 
+
+    function renderBulkRecordBank() {
+      const holder = document.getElementById('bulkRecordList');
+      if (!holder) return;
+      const issues = appState.bulkCvIssues || [];
+      if (!issues.length) {
+        holder.innerHTML = "<span class='small muted'>Search/select a ComicVine series and issues to load draggable records.</span>";
+        return;
+      }
+      holder.innerHTML = '';
+      issues.forEach((issue) => {
+        const title = issue.name || issue.title || '(untitled)';
+        const issueNum = issue.issue_number || '?';
+        const coverDate = String(issue.cover_date || '').trim();
+        const item = document.createElement('div');
+        item.className = 'bulk-record-item';
+        item.setAttribute('draggable', 'true');
+        item.innerHTML = `<b>#${issueNum}</b> ${title}<small>${coverDate || 'no cover date'} • id ${issue.id || ''}</small>`;
+        item.ondragstart = (ev) => {
+          if (ev.dataTransfer) {
+            ev.dataTransfer.effectAllowed = 'copy';
+            ev.dataTransfer.setData('text/plain', 'cvrecord:' + String(issue.id || ''));
+          }
+        };
+        holder.appendChild(item);
+      });
+    }
+
     function bulkResolveIssueForRow(row, issues, fallbackIssue) {
       const token = normalizeIssue(
         row.issue ||
@@ -2643,6 +2930,7 @@ INDEX_HTML = """<!doctype html>
 
       applyComicVineIssueToBulkRow(row, issue);
       renderBulkQueue();
+      renderBulkRecordBank();
       setStatus('Applied ComicVine selection to selected bulk row.', false);
     }
 
@@ -2655,9 +2943,15 @@ INDEX_HTML = """<!doctype html>
       }
 
       let rows = [];
-      if (scope === 'visible') rows = (appState.bulkRows || []).filter(passesBulkFilter);
+      if (scope === 'visible' || scope === 'active') rows = (appState.bulkRows || []).filter(passesBulkFilter);
       else rows = (appState.bulkRows || []).filter(r => !!r.selected);
 
+      if (!rows.length && scope === 'selected') {
+        rows = (appState.bulkRows || []).filter(passesBulkFilter);
+        if (rows.length) {
+          setStatus('No checked rows selected; applying to all visible active rows instead.', false);
+        }
+      }
       if (!rows.length) {
         setStatus(scope === 'visible' ? 'No visible rows to apply.' : 'No checked rows selected for batch apply.', true);
         return;
@@ -2681,7 +2975,8 @@ INDEX_HTML = """<!doctype html>
       });
 
       renderBulkQueue();
-      const suffix = scope === 'visible' ? 'visible' : 'checked';
+      renderBulkRecordBank();
+      const suffix = scope === 'visible' ? 'visible' : (scope === 'active' ? 'active' : 'checked');
       if (!changed) {
         setStatus('Batch apply could not map any ' + suffix + ' rows to ComicVine issues.', true);
         return;
@@ -2753,6 +3048,7 @@ INDEX_HTML = """<!doctype html>
         error: raw.error || '',
         hints,
         selected: false,
+        held: false,
         writeState: '',
         writeError: '',
         series: hints.series || '',
@@ -2929,8 +3225,13 @@ INDEX_HTML = """<!doctype html>
     }
 
     function passesBulkFilter(row) {
+      if (!row || row.held) return false;
       const st = classifyBulkRow(row);
       return appState.bulkFilter === 'all' || st === appState.bulkFilter;
+    }
+
+    function holdingRows() {
+      return (appState.bulkRows || []).filter(r => !!r.held);
     }
 
     function clearBulkDropTargets() {
@@ -2949,11 +3250,67 @@ INDEX_HTML = """<!doctype html>
       setStatus('Row order updated by drag-and-drop.', false);
     }
 
+
+    function bulkToggleHold(rowId, held) {
+      const row = getBulkRowById(rowId);
+      if (!row) return;
+      row.held = !!held;
+      row.selected = false;
+      if (row.held && String(appState.bulkSelectedId) === String(row.id)) appState.bulkSelectedId = null;
+      renderBulkQueue();
+      setStatus((row.held ? 'Moved to holding: ' : 'Restored to active: ') + (row.path || row.id), false);
+    }
+
+    function bulkToggleSelectAll(lane, checked) {
+      const rows = lane === 'holding' ? holdingRows() : (appState.bulkRows || []).filter(passesBulkFilter);
+      rows.forEach(r => { r.selected = !!checked; });
+      renderBulkQueue();
+      setStatus((checked ? 'Selected ' : 'Cleared ') + rows.length + ' ' + lane + ' row(s).', false);
+    }
+
+    function bulkSortByColumn(key) {
+      const sort = appState.bulkSort || { key: 'issue', dir: 'asc' };
+      if (sort.key === key) sort.dir = (sort.dir === 'asc') ? 'desc' : 'asc';
+      else { sort.key = key; sort.dir = 'asc'; }
+      appState.bulkSort = sort;
+      appState.bulkManualOrder = false;
+      renderBulkQueue();
+      setStatus('Sorted active rows by ' + key + ' (' + sort.dir + ').', false);
+    }
+
+    function bulkSortValueForRow(row, key) {
+      const hints = row.hints || {};
+      const st = classifyBulkRow(row);
+      const conf = confidenceForBulkRow(row);
+      if (key === 'status') return st;
+      if (key === 'path') return String(row.path || '');
+      if (key === 'series') return String(row.series || hints.series || '');
+      if (key === 'issue') return issueTokenForRow(row) ?? 1e12;
+      if (key === 'year') return yearTokenForRow(row) ?? 1e12;
+      if (key === 'best') return String((row.series || hints.series || '') + ' ' + (row.issue || hints.issue || ''));
+      if (key === 'confidence') return conf;
+      if (key === 'note') return String(row.writeError || row.error || '');
+      return String(row.path || '');
+    }
+
+    function applyActiveBulkSort(rows) {
+      const sort = appState.bulkSort || { key: 'issue', dir: 'asc' };
+      const factor = sort.dir === 'desc' ? -1 : 1;
+      rows.sort((a, b) => {
+        const va = bulkSortValueForRow(a, sort.key);
+        const vb = bulkSortValueForRow(b, sort.key);
+        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * factor;
+        return String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' }) * factor;
+      });
+      return rows;
+    }
+
     function renderBulkQueue() {
       const tbody = document.querySelector('#bulkQueueTable tbody');
       if (!tbody) return;
       tbody.innerHTML = '';
-      (appState.bulkRows || []).filter(passesBulkFilter).forEach((r) => {
+      const activeRows = applyActiveBulkSort((appState.bulkRows || []).filter(passesBulkFilter).slice());
+      activeRows.forEach((r) => {
         const hints = r.hints || parseFilenameHints(r.path || '');
         const st = classifyBulkRow(r);
         const conf = confidenceForBulkRow(r);
@@ -2969,8 +3326,8 @@ INDEX_HTML = """<!doctype html>
                 : (r.error || (st === 'review' ? 'Needs review' : ((r.has_cix || r.has_cbi || r.has_comet) ? 'Ready' : 'Ready (write will create metadata style)')))));
         const tr = document.createElement('tr');
         tr.className = 'bulk-queue-row';
-        tr.setAttribute('draggable', 'true');
-        tr.innerHTML = `<td><span class='drag-handle'>☰</span></td><td><input type='checkbox' data-bulk-id='${r.id}' ${r.selected ? 'checked' : ''}></td><td><span class='pill ${st === 'ready' ? 'good' : 'warn'}'>${st}</span></td><td>${r.path || ''}</td><td>${r.series || hints.series || ''}</td><td>${r.issue || hints.issue || ''}</td><td>${r.year || hints.year || ''}</td><td>${best}</td><td>${conf}%</td><td>${note}</td>`;
+        tr.setAttribute('draggable', appState.bulkManualOrder ? 'true' : 'false');
+        tr.innerHTML = `<td><span class='drag-handle'>☰</span></td><td><input type='checkbox' data-bulk-id='${r.id}' ${r.selected ? 'checked' : ''}></td><td><button class='bulk-chip' type='button' data-hold-id='${r.id}'>Hold</button></td><td><span class='pill ${st === 'ready' ? 'good' : 'warn'}'>${st}</span></td><td>${r.path || ''}</td><td>${r.series || hints.series || ''}</td><td>${r.issue || hints.issue || ''}</td><td>${r.year || hints.year || ''}</td><td>${best}</td><td>${conf}%</td><td>${note}</td>`;
         tr.onclick = () => selectBulkRow(r.id, conf, st, best, note);
         tr.ondragstart = ev => {
           appState.bulkDragId = r.id;
@@ -2993,7 +3350,17 @@ INDEX_HTML = """<!doctype html>
         tr.ondrop = ev => {
           ev.preventDefault();
           tr.classList.remove('drop-target');
-          const dragId = appState.bulkDragId != null ? appState.bulkDragId : (ev.dataTransfer ? ev.dataTransfer.getData('text/plain') : '');
+          const payload = ev.dataTransfer ? String(ev.dataTransfer.getData('text/plain') || '') : '';
+          if (payload.startsWith('cvrecord:')) {
+            const issueId = payload.slice('cvrecord:'.length);
+            const issue = (appState.bulkCvIssues || []).find(i => String(i.id || '') === String(issueId));
+            if (issue && applyComicVineIssueToBulkRow(r, issue)) {
+              renderBulkQueue();
+              setStatus('Applied ComicVine record #' + String(issue.issue_number || '?') + ' to row: ' + (r.path || r.id), false);
+            }
+            return;
+          }
+          const dragId = appState.bulkDragId != null ? appState.bulkDragId : payload;
           bulkMoveRow(dragId, r.id);
         };
 
@@ -3002,9 +3369,40 @@ INDEX_HTML = """<!doctype html>
           cb.onclick = ev => ev.stopPropagation();
           cb.onchange = () => { r.selected = !!cb.checked; };
         }
+        const holdBtn = tr.querySelector("button[data-hold-id]");
+        if (holdBtn) {
+          holdBtn.onclick = ev => { ev.stopPropagation(); bulkToggleHold(r.id, true); };
+        }
         tbody.appendChild(tr);
       });
-      updateBulkCounters(appState.bulkRows || []);
+
+      const holdBody = document.querySelector('#bulkHoldingTable tbody');
+      if (holdBody) {
+        holdBody.innerHTML = '';
+        holdingRows().forEach((r) => {
+          const hints = r.hints || parseFilenameHints(r.path || '');
+          const st = classifyBulkRow(r);
+          const conf = confidenceForBulkRow(r);
+          const best = (r.series || hints.series || '') + ((r.issue || hints.issue) ? (' #' + (r.issue || hints.issue)) : '');
+          const note = r.writeState === 'written' ? 'Written' : (r.writeError || r.error || '-');
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td><input type='checkbox' data-hold-check='${r.id}' ${r.selected ? 'checked' : ''}></td><td><button class='bulk-chip' type='button' data-restore-id='${r.id}'>Restore</button></td><td>${st}</td><td>${r.path || ''}</td><td>${r.series || hints.series || ''}</td><td>${r.issue || hints.issue || ''}</td><td>${r.year || hints.year || ''}</td><td>${best}</td><td>${conf}%</td><td>${note}</td>`;
+          const cbh = tr.querySelector("input[data-hold-check]");
+          if (cbh) cbh.onchange = () => { r.selected = !!cbh.checked; };
+          const rb = tr.querySelector("button[data-restore-id]");
+          if (rb) rb.onclick = () => bulkToggleHold(r.id, false);
+          holdBody.appendChild(tr);
+        });
+      }
+
+      const activeRowsNow = (appState.bulkRows || []).filter(passesBulkFilter);
+      const activeAll = document.getElementById('bulkSelectAllActive');
+      if (activeAll) activeAll.checked = !!activeRowsNow.length && activeRowsNow.every(r => r.selected);
+      const holdRowsNow = holdingRows();
+      const holdAll = document.getElementById('bulkSelectAllHolding');
+      if (holdAll) holdAll.checked = !!holdRowsNow.length && holdRowsNow.every(r => r.selected);
+
+      updateBulkCounters((appState.bulkRows || []).filter(r => !r.held));
       renderBulkPreview();
       syncBulkEditorFromSelection();
     }
@@ -3064,6 +3462,7 @@ INDEX_HTML = """<!doctype html>
       renderBulkAppliedReadable(r);
       syncBulkEditorFromSelection();
       syncBulkSearchFromSelection();
+      renderBulkRecordBank();
     }
 
     function renderBulkAppliedReadable(row) {
@@ -3322,6 +3721,7 @@ INDEX_HTML = """<!doctype html>
         await bulkEnrichRowsFromMetadata(appState.bulkRows);
         bulkSortCurrentRows(false);
         syncBulkSearchFromSelection();
+        renderBulkRecordBank();
         setStatus('Bulk scan complete: ' + String(data.count || 0) + ' files.', false);
       } catch (err) {
         appState.bulkRows = [];
@@ -3413,6 +3813,7 @@ INDEX_HTML = """<!doctype html>
       setStatus('Bulk write started (' + label + '): ' + rows.length + ' file(s)…', false);
 
       for (const row of rows) {
+        if (row.held) { skipped += 1; continue; }
         const patch = buildBulkMetadataPatch(row);
         if (!Object.keys(patch).length) {
           row.writeState = 'skipped';
@@ -3422,20 +3823,25 @@ INDEX_HTML = """<!doctype html>
         }
         try {
           const bulkNaming = namingState('bulk');
-          const namingTarget = buildBulkNamingWriteTarget(row);
+          let namingTarget = buildBulkNamingWriteTarget(row);
+          if (namingTarget && !isAbsolutePath(namingTarget)) {
+            const srcDir = normalizeSlashPath(row.path || '').replace(/\/[^/]*$/, '');
+            namingTarget = combinePath(srcDir, namingTarget);
+          }
           const primaryTarget = (bulkNaming.apply && bulkNaming.override && namingTarget) ? namingTarget : '';
 
-          async function postBulkWrite(target) {
+          async function postBulkWrite(target, saveMode='copy') {
             const res = await fetch('/api/write', {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ path: row.path, write_path: target, style, metadata: patch })
+              body: JSON.stringify({ path: row.path, write_path: target, style, metadata: patch, save_mode: saveMode })
             });
             const payload = await res.json();
             return { res, payload };
           }
 
-          const primary = await postBulkWrite(primaryTarget);
+          const primaryMode = (bulkNaming.apply && namingTarget && primaryTarget === namingTarget) ? 'hardlink' : 'copy';
+          const primary = await postBulkWrite(primaryTarget, primaryMode);
           if (!primary.res.ok || !primary.payload || !primary.payload.ok) {
             row.writeState = 'failed';
             row.writeError = (primary.payload && primary.payload.error) ? primary.payload.error : ('HTTP ' + primary.res.status);
@@ -3445,7 +3851,7 @@ INDEX_HTML = """<!doctype html>
 
           const writtenPrimary = primary.payload.written_path || row.path;
           if (bulkNaming.apply && !bulkNaming.override && namingTarget && namingTarget !== writtenPrimary) {
-            const mirror = await postBulkWrite(namingTarget);
+            const mirror = await postBulkWrite(namingTarget, 'hardlink');
             if (!mirror.res.ok || !mirror.payload || !mirror.payload.ok) {
               row.writeState = 'failed';
               row.writeError = 'Primary write succeeded; naming mirror failed: ' + ((mirror.payload && mirror.payload.error) ? mirror.payload.error : ('HTTP ' + mirror.res.status));
@@ -3492,6 +3898,7 @@ INDEX_HTML = """<!doctype html>
       });
     }
     syncBulkSearchFromSelection();
+    renderBulkRecordBank();
     setBulkGapVisibility(false);
     renderBulkFieldGap(null);
     switchTab(localStorage.getItem('comicapi.activeTab') === 'bulk' ? 'bulk' : 'single');
@@ -3511,6 +3918,25 @@ INDEX_HTML = """<!doctype html>
 </html>"""
 
 STYLE_MAP = {"CBI": MetaDataStyle.CBI, "CIX": MetaDataStyle.CIX, "COMET": MetaDataStyle.COMET}
+
+
+def write_sidecar_metadata(target_path, md, style_name):
+    base = str(target_path or "").strip()
+    if not base:
+        return None
+    sidecar = ""
+    if style_name == "CIX":
+        sidecar = base + ".ComicInfo.xml"
+        ComicInfoXml().writeToExternalFile(sidecar, md)
+    elif style_name == "CBI":
+        sidecar = base + ".ComicBookInfo.json"
+        ComicBookInfo().writeToExternalFile(sidecar, md)
+    elif style_name == "COMET":
+        sidecar = base + ".CoMet.xml"
+        CoMet().writeToExternalFile(sidecar, md)
+    else:
+        return None
+    return sidecar
 
 
 @dataclass
@@ -4098,22 +4524,41 @@ class Handler(BaseHTTPRequestHandler):
         payload = self._read_json()
         path = payload.get("path", "")
         write_path = payload.get("write_path", "")
+        save_mode = str(payload.get("save_mode", "copy")).strip().lower()
         style = str(payload.get("style", "AUTO")).upper()
         patch = payload.get("metadata", {})
         if not path:
             return self._json(400, {"error": "path is required"})
+        if not os.path.exists(path):
+            return self._json(400, {"error": "source path does not exist", "path": path})
+        if not os.path.isfile(path):
+            return self._json(400, {"error": "source path must be a file", "path": path})
         if style != "AUTO" and style not in STYLE_MAP:
             return self._json(400, {"error": "style must be AUTO, CIX, CBI, or COMET"})
+        if save_mode not in {"copy", "hardlink"}:
+            return self._json(400, {"error": "save_mode must be copy or hardlink", "save_mode": save_mode})
 
         target_path = write_path.strip() or path
+        if write_path and not os.path.isabs(target_path):
+            return self._json(400, {"error": "write_path must be an absolute path", "write_path": write_path})
+
+        write_target_path = target_path
         if target_path != path:
             target_dir = os.path.dirname(os.path.abspath(target_path))
             if target_dir and not os.path.exists(target_dir):
                 os.makedirs(target_dir, exist_ok=True)
-            shutil.copy2(path, target_path)
+            if save_mode == "copy":
+                if os.path.exists(target_path):
+                    if not os.path.samefile(path, target_path):
+                        os.remove(target_path)
+                if not os.path.exists(target_path):
+                    shutil.copy2(path, target_path)
+            else:
+                # hardlink mode writes metadata to source first, then creates hardlink alias
+                write_target_path = path
 
         try:
-            ca = ComicArchive(target_path, default_image_path=target_path)
+            ca = ComicArchive(write_target_path, default_image_path=write_target_path)
             detected_style = detect_style(ca)
             use_style = choose_style(style, detected_style)
             md = ca.readMetadata(STYLE_MAP[use_style])
@@ -4130,7 +4575,21 @@ class Handler(BaseHTTPRequestHandler):
             ok = ca.writeMetadata(md, STYLE_MAP[use_style])
             if not ok:
                 return self._json(500, {"ok": False, "error": "Metadata write returned false", "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
-            return self._json(200, {"ok": True, "path": path, "written_path": target_path, "style": use_style, "detected_style": detected_style})
+
+            final_written_path = write_target_path
+            if save_mode == "hardlink" and target_path != path:
+                try:
+                    if os.path.exists(target_path):
+                        if not os.path.samefile(write_target_path, target_path):
+                            os.remove(target_path)
+                    if not os.path.exists(target_path):
+                        os.link(write_target_path, target_path)
+                    final_written_path = target_path
+                except OSError as exc:
+                    return self._json(400, {"ok": False, "error": f"hardlink save failed: {exc}", "path": path, "written_path": target_path})
+
+            sidecar_path = write_sidecar_metadata(final_written_path, md, use_style)
+            return self._json(200, {"ok": True, "path": path, "written_path": final_written_path, "sidecar_path": sidecar_path, "style": use_style, "detected_style": detected_style, "save_mode": save_mode})
         except Exception as exc:
             return self._json(500, {"ok": False, "error": str(exc), "path": path, "written_path": target_path})
 
