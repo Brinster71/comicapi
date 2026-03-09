@@ -2659,15 +2659,19 @@ INDEX_HTML = """<!doctype html>
     }
 
     async function startWithFolderSelection() {
-      const current = (document.getElementById('bulkRootPath').value || document.getElementById('rootPath').value || '').trim();
-      const picked = await browseBulkLibraryPathNative(current);
-      if (!picked.path) {
-        setStatus('Folder selection failed: ' + (picked.error || 'no folder selected'), true);
+      const current = (document.getElementById('bulkRootPath').value || document.getElementById('rootPath').value || '').trim() || '/home/travis/comics';
+      const picked = await showInlinePathEntry('Enter absolute folder path to scan for bulk processing:', current);
+      if (!picked) {
+        setStatus('Folder selection canceled.', true);
         return;
       }
-      document.getElementById('rootPath').value = picked.path;
-      document.getElementById('bulkRootPath').value = picked.path;
-      document.getElementById('bulkRootLabel').textContent = picked.path;
+      if (!isAbsolutePath(picked)) {
+        setStatus('Folder selection failed: please enter an absolute server folder path.', true);
+        return;
+      }
+      document.getElementById('rootPath').value = picked;
+      document.getElementById('bulkRootPath').value = picked;
+      document.getElementById('bulkRootLabel').textContent = picked;
       showStartGate(false);
       switchTab('bulk');
       setStatus('Folder selected. Starting bulk scan…', false);
