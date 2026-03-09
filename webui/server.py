@@ -588,6 +588,17 @@ INDEX_HTML = """<!doctype html>
     .drag-handle:active {
       cursor: grabbing;
     }
+
+    .start-gate {
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      padding: .9rem;
+      margin-bottom: .8rem;
+    }
+    .start-gate.is-hidden { display:none; }
+    .start-gate-actions { display:flex; gap:.55rem; flex-wrap:wrap; margin-top:.5rem; }
     @media (max-width: 900px){
       .grid2 { grid-template-columns: 1fr; }
       .mapping-grid { grid-template-columns: 22px 130px 1fr; }
@@ -627,6 +638,17 @@ INDEX_HTML = """<!doctype html>
       <button id='tabBulkBtn' class='tab-btn' onclick='switchTab("bulk")'>Bulk identification</button>
     </div>
   </div>
+
+
+  <section id='startGate' class='start-gate'>
+    <h3 style='margin-top:0;'>Selection</h3>
+    <div class='small muted'>Select a folder to begin in Bulk mode, or select a file path to begin in Single mode.</div>
+    <div class='start-gate-actions'>
+      <button type='button' onclick='startWithFolderSelection()'>Select folder and open Bulk</button>
+      <button type='button' onclick='startWithFileSelection()'>Select file and open Single</button>
+      <button type='button' onclick='dismissStartGate()'>Skip selection</button>
+    </div>
+  </section>
 
   <div id='singleTab' class='tab-panel active'>
   <div id='diagBanner' class='diag'>Loading runtime diagnostics…</div>
@@ -2625,6 +2647,56 @@ INDEX_HTML = """<!doctype html>
       setStatus('ComicVine search complete.', false);
     }
 
+
+    function showStartGate(show) {
+      const gate = document.getElementById('startGate');
+      if (!gate) return;
+      gate.classList.toggle('is-hidden', !show);
+    }
+
+    function dismissStartGate() {
+      showStartGate(false);
+    }
+
+    async function startWithFolderSelection() {
+      const current = (document.getElementById('bulkRootPath').value || document.getElementById('rootPath').value || '').trim();
+      const picked = await browseBulkLibraryPathNative(current);
+      if (!picked.path) {
+        setStatus('Folder selection failed: ' + (picked.error || 'no folder selected'), true);
+        return;
+      }
+      document.getElementById('rootPath').value = picked.path;
+      document.getElementById('bulkRootPath').value = picked.path;
+      document.getElementById('bulkRootLabel').textContent = picked.path;
+      showStartGate(false);
+      switchTab('bulk');
+      setStatus('Folder selected. Starting bulk scan…', false);
+      await bulkScanFromRoot();
+    }
+
+    async function startWithFileSelection() {
+      const current = (document.getElementById('comicPath').value || '').trim() || '/home/travis/comics/example.cbz';
+      const picked = await showInlinePathEntry('Enter absolute comic file path on the server:', current);
+      if (!picked) {
+        setStatus('File selection canceled.', true);
+        return;
+      }
+      if (!isAbsolutePath(picked)) {
+        setStatus('File selection failed: please enter an absolute server file path.', true);
+        return;
+      }
+      document.getElementById('comicPath').value = picked;
+      const folder = normalizeSlashPath(picked).replace(/\/[^/]*$/, '');
+      if (folder) {
+        document.getElementById('rootPath').value = folder;
+        copySinglePathToBulk();
+      }
+      showStartGate(false);
+      switchTab('single');
+      setWritePathFromSelected();
+      setStatus('File selected. You can now assess/read/write metadata in Single mode.', false);
+    }
+
     function switchTab(tab) {
       const single = tab !== 'bulk';
       const singlePanel = document.getElementById('singleTab');
@@ -3912,6 +3984,8 @@ INDEX_HTML = """<!doctype html>
     setBulkGapVisibility(false);
     renderBulkFieldGap(null);
     switchTab(localStorage.getItem('comicapi.activeTab') === 'bulk' ? 'bulk' : 'single');
+    const hasSelection = !!((document.getElementById('comicPath').value || '').trim() || (document.getElementById('bulkRootPath').value || '').trim());
+    showStartGate(!hasSelection);
   </script>
 
   <div id='pathPickOverlay' role='dialog' aria-modal='true' aria-labelledby='pathPickMsg' style='display:none'>
