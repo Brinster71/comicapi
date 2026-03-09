@@ -2716,6 +2716,9 @@ INDEX_HTML = """<!doctype html>
         setWritePathFromSelected();
         setStatus('File selected. Single mode opened.', false);
       }
+      const parent = current.replace(/\/[^/]+$/, '') || '/';
+      if (input) input.value = parent;
+      loadStartSelectionList(parent);
     }
 
     function renderStartSelectionList(data) {
