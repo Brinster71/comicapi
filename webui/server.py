@@ -2714,6 +2714,20 @@ INDEX_HTML = """<!doctype html>
         setWritePathFromSelected();
         setStatus('File selected. Single mode opened.', false);
       }
+      await openSelectionEntry(entry);
+    }
+
+    function openSelectionParent() {
+      const input = document.getElementById('startPathInput');
+      const current = normalizeSlashPath((input && input.value) ? input.value : '').replace(/\/$/, '');
+      if (!current || current === '/') {
+        if (input) input.value = '/';
+        loadStartSelectionList('/');
+        return;
+      }
+      const parent = current.replace(/\/[^/]+$/, '') || '/';
+      if (input) input.value = parent;
+      loadStartSelectionList(parent);
     }
 
     function renderStartSelectionList(data) {
