@@ -599,6 +599,9 @@ INDEX_HTML = """<!doctype html>
     }
     .start-gate.is-hidden { display:none; }
     .start-gate-actions { display:flex; gap:.55rem; flex-wrap:wrap; margin-top:.5rem; }
+    .start-selection-list { border:1px solid var(--line); border-radius:.7rem; background:rgba(255,255,255,.55); max-height:14rem; overflow:auto; }
+    .start-selection-item { display:flex; justify-content:space-between; gap:.6rem; width:100%; border:none; background:transparent; padding:.45rem .55rem; text-align:left; cursor:pointer; color:var(--ink); }
+    .start-selection-item:hover { background:rgba(255,255,255,.75); }
     @media (max-width: 900px){
       .grid2 { grid-template-columns: 1fr; }
       .mapping-grid { grid-template-columns: 22px 130px 1fr; }
@@ -642,12 +645,14 @@ INDEX_HTML = """<!doctype html>
 
   <section id='startGate' class='start-gate'>
     <h3 style='margin-top:0;'>Selection</h3>
-    <div class='small muted'>Select a folder to begin in Bulk mode, or select a file path to begin in Single mode.</div>
+    <div class='small muted'>Browse a server folder. Clicking a folder opens Bulk; clicking a comic file opens Single.</div>
     <div class='start-gate-actions'>
-      <button type='button' onclick='startWithFolderSelection()'>Select folder and open Bulk</button>
-      <button type='button' onclick='startWithFileSelection()'>Select file and open Single</button>
+      <input id='startPathInput' type='text' placeholder='/path/to/comics' style='min-width:24rem;'>
+      <button type='button' onclick='loadStartSelectionList()'>Select</button>
       <button type='button' onclick='dismissStartGate()'>Skip selection</button>
     </div>
+    <div id='startSelectionMeta' class='small muted' style='margin-top:.4rem;'></div>
+    <div id='startSelectionList' class='small muted' style='margin-top:.4rem;'>Enter a folder path and press Select.</div>
   </section>
 
   <div id='singleTab' class='tab-panel active'>
@@ -1616,7 +1621,7 @@ INDEX_HTML = """<!doctype html>
         const inp = document.getElementById('pathPickInput');
         if (!overlay || !msg || !inp) { resolve(null); return; }
         msg.textContent = message || 'Enter the absolute folder path on the server:';
-        inp.value = String(initialValue || '').trim() || '/home/travis/comics';
+        inp.value = String(initialValue || '').trim() || '/';
         overlay.style.display = 'flex';
         setTimeout(function() { inp.focus(); inp.select(); }, 60);
       });
@@ -1653,7 +1658,7 @@ INDEX_HTML = """<!doctype html>
 
     /* Keep legacy wrapper so existing code still compiles; callers have been updated to await showInlinePathEntry */
     function promptForAbsolutePath(message, initialValue) {
-      let suggested = String(initialValue || '').trim() || '/home/travis/comics';
+      let suggested = String(initialValue || '').trim() || '/';
       while (true) {
         const entered = window.prompt(message, suggested);
         if (entered == null) return null;
@@ -2661,49 +2666,75 @@ INDEX_HTML = """<!doctype html>
       showStartGate(false);
     }
 
-    async function startWithFolderSelection() {
-      setStatus('Opening folder selector…', false);
-      const current = (document.getElementById('bulkRootPath').value || document.getElementById('rootPath').value || '').trim() || '/home/travis/comics';
-      const picked = await showInlinePathEntry('Enter absolute folder path to scan for bulk processing:', current);
-      if (!picked) {
-        setStatus('Folder selection canceled.', true);
+    async function openSelectionEntry(entry) {
+      const p = String((entry && entry.path) || '').trim();
+      if (!p) return;
+      if (entry.is_dir) {
+        document.getElementById('rootPath').value = p;
+        document.getElementById('bulkRootPath').value = p;
+        document.getElementById('bulkRootLabel').textContent = p;
+        showStartGate(false);
+        switchTab('bulk');
+        setStatus('Folder selected. Starting bulk scan…', false);
+        await bulkScanFromRoot();
         return;
       }
-      if (!isAbsolutePath(picked)) {
-        setStatus('Folder selection failed: please enter an absolute server folder path.', true);
-        return;
+      if (entry.is_file) {
+        document.getElementById('comicPath').value = p;
+        const folder = normalizeSlashPath(p).replace(/\/[^/]*$/, '');
+        if (folder) {
+          document.getElementById('rootPath').value = folder;
+          copySinglePathToBulk();
+        }
+        showStartGate(false);
+        switchTab('single');
+        setWritePathFromSelected();
+        setStatus('File selected. You can now assess/read/write metadata in Single mode.', false);
       }
-      document.getElementById('rootPath').value = picked;
-      document.getElementById('bulkRootPath').value = picked;
-      document.getElementById('bulkRootLabel').textContent = picked;
-      showStartGate(false);
-      switchTab('bulk');
-      setStatus('Folder selected. Starting bulk scan…', false);
-      await bulkScanFromRoot();
     }
 
-    async function startWithFileSelection() {
-      setStatus('Opening file selector…', false);
-      const current = (document.getElementById('comicPath').value || '').trim() || '/home/travis/comics/example.cbz';
-      const picked = await showInlinePathEntry('Enter absolute comic file path on the server:', current);
-      if (!picked) {
-        setStatus('File selection canceled.', true);
+    function renderStartSelectionList(data) {
+      const list = document.getElementById('startSelectionList');
+      const meta = document.getElementById('startSelectionMeta');
+      if (!list) return;
+      const entries = Array.isArray(data.entries) ? data.entries : [];
+      if (meta) meta.textContent = 'Current folder: ' + String(data.root || '');
+      if (!entries.length) {
+        list.className = 'small muted';
+        list.textContent = 'No folders or supported comic files found in this directory.';
         return;
       }
-      if (!isAbsolutePath(picked)) {
-        setStatus('File selection failed: please enter an absolute server file path.', true);
-        return;
+      list.className = 'start-selection-list';
+      list.innerHTML = '';
+      entries.forEach((entry) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'start-selection-item';
+        const icon = entry.is_dir ? '📁' : '📘';
+        const kind = entry.is_dir ? 'folder → Bulk' : 'file → Single';
+        btn.innerHTML = `<span>${icon} ${entry.name || ''}</span><span class='small muted'>${kind}</span>`;
+        btn.onclick = () => openSelectionEntry(entry);
+        list.appendChild(btn);
+      });
+    }
+
+    async function loadStartSelectionList() {
+      setStatus('Loading selection list…', false);
+      const input = document.getElementById('startPathInput');
+      const rootPath = (input && input.value ? input.value : '').trim() || (document.getElementById('rootPath').value || '').trim() || '/';
+      if (input) input.value = rootPath;
+      try {
+        const res = await fetch('/api/start_selection?path=' + encodeURIComponent(rootPath));
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          setStatus('Selection load failed: ' + (data.error || ('HTTP ' + res.status)), true);
+          return;
+        }
+        renderStartSelectionList(data);
+        setStatus('Selection list loaded. Click a folder or file to continue.', false);
+      } catch (err) {
+        setStatus('Selection load failed: ' + (err && err.message ? err.message : 'request failed'), true);
       }
-      document.getElementById('comicPath').value = picked;
-      const folder = normalizeSlashPath(picked).replace(/\/[^/]*$/, '');
-      if (folder) {
-        document.getElementById('rootPath').value = folder;
-        copySinglePathToBulk();
-      }
-      showStartGate(false);
-      switchTab('single');
-      setWritePathFromSelected();
-      setStatus('File selected. You can now assess/read/write metadata in Single mode.', false);
     }
 
     function switchTab(tab) {
@@ -3995,6 +4026,11 @@ INDEX_HTML = """<!doctype html>
     switchTab(localStorage.getItem('comicapi.activeTab') === 'bulk' ? 'bulk' : 'single');
     const hasSelection = !!((document.getElementById('comicPath').value || '').trim() || (document.getElementById('bulkRootPath').value || '').trim());
     showStartGate(!hasSelection);
+    const startInput = document.getElementById('startPathInput');
+    if (startInput && !startInput.value.trim()) {
+      startInput.value = (document.getElementById('rootPath').value || '').trim() || '/';
+    }
+    if (!hasSelection) loadStartSelectionList();
   </script>
 
   <div id='pathPickOverlay' role='dialog' aria-modal='true' aria-labelledby='pathPickMsg' style='display:none'>
@@ -4519,6 +4555,44 @@ class Handler(BaseHTTPRequestHandler):
                 "recurse": recurse,
                 "note": scan_note,
             })
+
+        if parsed.path == "/api/start_selection":
+            requested = qs.get("path", [""])[0].strip()
+            candidate = requested or os.getcwd()
+            if os.path.isfile(candidate):
+                candidate = os.path.dirname(candidate)
+            root = candidate
+            while root and not os.path.isdir(root):
+                parent = os.path.dirname(root.rstrip("/"))
+                if not parent or parent == root:
+                    break
+                root = parent
+            if not os.path.isdir(root):
+                root = os.getcwd()
+            exts = {".cbz", ".cbr", ".cbt", ".pdf", ".zip", ".rar"}
+            entries = []
+            try:
+                with os.scandir(root) as it:
+                    for entry in it:
+                        try:
+                            is_dir = entry.is_dir(follow_symlinks=False)
+                            is_file = entry.is_file(follow_symlinks=False)
+                        except OSError:
+                            continue
+                        if not (is_dir or is_file):
+                            continue
+                        if is_file and Path(entry.name).suffix.lower() not in exts:
+                            continue
+                        entries.append({
+                            "name": entry.name,
+                            "path": os.path.abspath(entry.path),
+                            "is_dir": is_dir,
+                            "is_file": is_file,
+                        })
+            except OSError as exc:
+                return self._json(400, {"error": str(exc), "path": root})
+            entries.sort(key=lambda e: (0 if e["is_dir"] else 1, e["name"].lower()))
+            return self._json(200, {"root": root, "entries": entries})
 
         if parsed.path == "/api/pick_directory":
           current = qs.get("current", [""])[0]
